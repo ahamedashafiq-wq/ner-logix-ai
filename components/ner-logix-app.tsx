@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, Boxes, BrainCircuit, ChevronDown, CircleHelp, Clock3, CloudRain, Crosshair, FileWarning, Gauge, MapPin, Menu, Package, Radio, Route as RouteIcon, Search, Settings, ShieldAlert, Siren, SlidersHorizontal, Truck, UserRound, Warehouse as WarehouseIcon, X, Zap } from 'lucide-react'
-import { alerts, deliveryTrend, districts, incidents, kpis, logisticsHealth, mapStates, predictions, riskTrend, supplies, vehicles, warehouses } from '@/mock/data'
-import type { Alert, Incident, Vehicle } from '@/types'
+import { Activity, AlertTriangle, Ambulance, ArrowDownRight, ArrowUpRight, Bell, Boxes, BrainCircuit, ChevronDown, CircleHelp, Clock3, CloudRain, Crosshair, FileWarning, Gauge, Hospital as HospitalIcon, MapPin, Menu, Package, Radio, Route as RouteIcon, Search, Settings, ShieldAlert, Siren, SlidersHorizontal, Truck, UserRound, Warehouse as WarehouseIcon, X, Zap } from 'lucide-react'
+import { alerts, deliveryTrend, hospitals, incidents, kpis, logisticsHealth, mapStates, predictions, riskTrend, supplies, vehicles, warehouses } from '@/mock/data'
+import type { Alert, GeoPoint, Hospital, Incident, Vehicle } from '@/types'
 
 const navItems = [
   { label: 'Dashboard', icon: Gauge }, { label: 'Live Map', icon: MapPin }, { label: 'Vehicles', icon: Truck }, { label: 'Deliveries', icon: Package },
@@ -12,6 +13,16 @@ const navItems = [
   { label: 'Warehouses', icon: WarehouseIcon }, { label: 'Analytics', icon: Activity }, { label: 'Field Reports', icon: Crosshair }, { label: 'Settings', icon: Settings },
 ]
 const iconMap: Record<string, typeof Truck> = { truck: Truck, package: Package, triangle: AlertTriangle, route: RouteIcon, bell: Bell, clock: Clock3, boxes: Boxes, activity: Activity }
+const coimbatoreCenter: GeoPoint = { lat: 11.0168, lng: 76.9558 }
+const sourceRegionCenter: GeoPoint = { lat: 25.35, lng: 92.35 }
+const mapApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
+
+function projectToCoimbatore(point: GeoPoint): GeoPoint {
+  return {
+    lat: coimbatoreCenter.lat + (point.lat - sourceRegionCenter.lat) * 0.16,
+    lng: coimbatoreCenter.lng + (point.lng - sourceRegionCenter.lng) * 0.16,
+  }
+}
 
 function StatusPill({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'green' | 'amber' | 'red' | 'blue' | 'slate' }) {
   return <span className={`status-pill ${tone}`}><span className="status-dot" />{children}</span>
@@ -24,19 +35,135 @@ function KpiCard({ item }: { item: typeof kpis[number] }) {
   const positive = !item.trend.startsWith('-')
   return <div className="kpi-card"><div className="kpi-icon"><Icon size={17} /></div><div className="kpi-label">{item.label}</div><div className="kpi-value">{item.value}</div><div className={`kpi-trend ${positive ? 'positive' : 'negative'}`}>{positive ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{item.trend}<span>vs yesterday</span></div></div>
 }
+function isValidPoint(point?: GeoPoint | null) {
+  return !!point && Number.isFinite(point.lat) && Number.isFinite(point.lng) && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180
+}
+
+function vehicleMapPoint(vehicle: Vehicle, index: number): GeoPoint {
+  const projected = projectToCoimbatore(vehicle.currentLocation)
+  return { lat: projected.lat + ((index % 3) - 1) * 0.008, lng: projected.lng + ((index % 4) - 1.5) * 0.008 }
+}
+
+function incidentMapPoint(incident: Incident, index: number): GeoPoint {
+  const projected = projectToCoimbatore({ lat: incident.lat, lng: incident.lng })
+  return { lat: projected.lat + ((index % 2) - 0.5) * 0.01, lng: projected.lng + ((index % 3) - 1) * 0.01 }
+}
+
+function markerIcon(color: string, scale = 7) {
+  if (!window.google?.maps) return undefined
+  return { path: window.google.maps.SymbolPath.CIRCLE, scale, fillColor: color, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 1.5 }
+}
+
+function TrafficLayer({ enabled, onUnavailable }: { enabled: boolean; onUnavailable: (message: string) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!enabled || !map || !window.google?.maps) return
+    let trafficLayer: google.maps.TrafficLayer | null = null
+    try {
+      trafficLayer = new window.google.maps.TrafficLayer()
+      trafficLayer.setMap(map)
+    } catch {
+      onUnavailable('Traffic layer unavailable')
+    }
+    return () => trafficLayer?.setMap(null)
+  }, [enabled, map, onUnavailable])
+  return null
+}
+
+function DirectionsRoute({ origin, destination, onRouteInfo, onRouteStatus }: { origin: GeoPoint | null; destination: GeoPoint | null; onRouteInfo: (info: string) => void; onRouteStatus: (message: string) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!map || !window.google?.maps || !isValidPoint(origin) || !isValidPoint(destination)) {
+      onRouteInfo('')
+      return
+    }
+    const renderer = new window.google.maps.DirectionsRenderer({
+      map,
+      suppressMarkers: true,
+      preserveViewport: false,
+      polylineOptions: { strokeColor: '#35c2d4', strokeOpacity: 0.92, strokeWeight: 5, zIndex: 40 },
+    })
+    const service = new window.google.maps.DirectionsService()
+    service.route({
+      origin,
+      destination,
+      travelMode: window.google.maps.TravelMode.DRIVING,
+      drivingOptions: { departureTime: new Date(), trafficModel: window.google.maps.TrafficModel.BEST_GUESS },
+      provideRouteAlternatives: false,
+    }, (result, status) => {
+      if (status !== window.google.maps.DirectionsStatus.OK || !result) {
+        onRouteInfo('')
+        onRouteStatus(status === window.google.maps.DirectionsStatus.REQUEST_DENIED ? 'Traffic-aware routing unavailable' : 'Route unavailable')
+        return
+      }
+      renderer.setDirections(result)
+      const leg = result.routes[0]?.legs[0]
+      const duration = leg?.duration_in_traffic?.text ?? leg?.duration?.text
+      onRouteInfo(`${leg?.distance?.text ?? 'Distance unavailable'} · ${duration ?? 'ETA unavailable'}${leg?.duration_in_traffic ? ' with traffic' : ''}`)
+      onRouteStatus(leg?.duration_in_traffic ? '' : 'Traffic-aware routing unavailable')
+    })
+    return () => renderer.setMap(null)
+  }, [destination, map, onRouteInfo, onRouteStatus, origin])
+  return null
+}
+
+function MapControls({ trafficEnabled, onLocate, onTrafficToggle, onMessage }: { trafficEnabled: boolean; onLocate: (point: GeoPoint) => void; onTrafficToggle: () => void; onMessage: (message: string) => void }) {
+  const map = useMap()
+  const locate = () => {
+    if (!navigator.geolocation) {
+      onMessage('Browser location unavailable')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      const point = { lat: coords.latitude, lng: coords.longitude }
+      onLocate(point)
+      map?.panTo(point)
+      map?.setZoom(14)
+      onMessage('')
+    }, () => onMessage('Location permission denied'), { enableHighAccuracy: false, timeout: 10000 })
+  }
+  return <div className="map-controls"><button aria-label="Zoom in" onClick={() => map?.setZoom((map.getZoom() ?? 12) + 1)}>+</button><button aria-label="Zoom out" onClick={() => map?.setZoom((map.getZoom() ?? 12) - 1)}>−</button><button aria-label="My Location" title="My Location" onClick={locate}><Crosshair size={15} /></button><button aria-label="Toggle traffic" title="Traffic" className={trafficEnabled ? 'active' : ''} onClick={onTrafficToggle}><Activity size={14} /></button></div>
+}
+
 function RegionMap({ onVehicle, onIncident, simulation }: { onVehicle: (v: Vehicle) => void; onIncident: (i: Incident) => void; simulation: boolean }) {
+  const [currentLocation, setCurrentLocation] = useState<GeoPoint | null>(null)
+  const [selectedOrigin, setSelectedOrigin] = useState(vehicles[0]?.id ?? '')
+  const [selectedHospital, setSelectedHospital] = useState(hospitals[0]?.id ?? '')
+  const [trafficEnabled, setTrafficEnabled] = useState(true)
+  const [routeInfo, setRouteInfo] = useState('')
+  const [mapMessage, setMapMessage] = useState('')
+  const mappedVehicles = vehicles.slice(0, 12).map((vehicle, index) => ({ vehicle: simulation && index === 0 ? { ...vehicle, status: 'emergency' as const, type: 'van' as const } : vehicle, position: vehicleMapPoint(vehicle, index) })).filter(({ position }) => isValidPoint(position))
+  const selectedVehicle = mappedVehicles.find(({ vehicle }) => vehicle.id === selectedOrigin)
+  const selectedDestination = hospitals.find((hospital) => hospital.id === selectedHospital)
+  const routeOrigin = selectedOrigin === 'current' ? currentLocation : selectedVehicle?.position ?? null
+  const routeDestination = selectedDestination ? { lat: selectedDestination.lat, lng: selectedDestination.lng } : null
+
+  useEffect(() => {
+    if (simulation) {
+      setSelectedOrigin(vehicles[0]?.id ?? '')
+      setSelectedHospital(hospitals[0]?.id ?? '')
+      setMapMessage('Emergency ambulance route active')
+    }
+  }, [simulation])
+
+  const vehicleStatusColor = (vehicle: Vehicle) => vehicle.status === 'emergency' ? '#e76561' : vehicle.status === 'delayed' ? '#e9ad4b' : vehicle.status === 'available' || vehicle.status === 'assigned' ? '#8fa6ad' : '#35c2d4'
+  const incidentSeverityColor = (incident: Incident) => incident.severity === 'critical' ? '#e76561' : incident.severity === 'high' ? '#e18444' : incident.severity === 'medium' ? '#e0b649' : '#55d29d'
   return <div className="map-shell">
-    <div className="map-toolbar"><div className="map-search"><Search size={15} /><input aria-label="Search map" placeholder="Search district, vehicle or road" /></div><button className="map-tool"><SlidersHorizontal size={15} /> Layers</button><button className="map-tool">All states <ChevronDown size={14} /></button></div>
-    <div className="region-map" role="img" aria-label="Interactive map of the North Eastern Region">
-      <div className="map-grid" /><div className="map-label map-title">NORTH EASTERN REGION <span>LIVE OPERATIONS MAP</span></div>
-      <div className="map-water water-one" /><div className="map-water water-two" />
-      <svg className="route-lines" viewBox="0 0 800 500" preserveAspectRatio="none" aria-hidden="true"><path className="road-green" d="M115 300 C210 245, 250 300, 350 215 S500 230, 615 130" /><path className={simulation ? 'road-red' : 'road-orange'} d="M160 380 C250 340, 320 360, 405 290 S560 320, 710 225" /><path className="road-yellow" d="M255 90 C325 150, 370 160, 440 210 S580 245, 680 390" /></svg>
-      {districts.map((d, i) => <div key={d.id} className="district-node" style={{ left: `${13 + (i * 11) % 73}%`, top: `${19 + (i * 17) % 63}%` }}><span className="district-dot" />{d.name}</div>)}
-      {vehicles.filter(v => v.status === 'on_route').slice(0, 8).map((v, i) => <button key={v.id} className="vehicle-marker" style={{ left: `${22 + (i * 11) % 62}%`, top: `${34 + (i * 13) % 40}%` }} onClick={() => onVehicle(v)} aria-label={`View ${v.vehicleNumber}`}><Truck size={12} /></button>)}
-      {incidents.slice(0, 4).map((incident, i) => <button key={incident.id} className={`incident-marker severity-${incident.severity}`} style={{ left: `${38 + (i * 13) % 44}%`, top: `${23 + (i * 16) % 54}%` }} onClick={() => onIncident(incident)} aria-label={`View ${incident.type} incident`}><AlertTriangle size={13} /></button>)}
-      {warehouses.map((warehouse, i) => <div key={warehouse.id} className="warehouse-marker" style={{ left: `${24 + i * 25}%`, top: `${73 - i * 12}%` }} title={warehouse.name}><WarehouseIcon size={13} /></div>)}
+    <div className="map-toolbar"><div className="map-search"><Search size={15} /><input aria-label="Search map" placeholder="Search district, ambulance or hospital" /></div><select className="map-select" aria-label="Select ambulance" value={selectedOrigin} onChange={(event) => setSelectedOrigin(event.target.value)}>{currentLocation && <option value="current">My location</option>}{mappedVehicles.slice(0, 8).map(({ vehicle }) => <option key={vehicle.id} value={vehicle.id}>{vehicle.status === 'emergency' ? 'AMB' : 'Vehicle'} {vehicle.vehicleNumber}</option>)}</select><select className="map-select" aria-label="Select hospital" value={selectedHospital} onChange={(event) => setSelectedHospital(event.target.value)}>{hospitals.map((hospital) => <option key={hospital.id} value={hospital.id}>{hospital.name}</option>)}</select><button className={`map-tool ${trafficEnabled ? 'active' : ''}`} onClick={() => setTrafficEnabled((value) => !value)}><SlidersHorizontal size={15} /> Traffic</button><button className="map-tool">Road map <ChevronDown size={14} /></button></div>
+    <div className="region-map" aria-label="Google Maps live operations map centered on Coimbatore">
+      {mapApiKey ? <APIProvider apiKey={mapApiKey}>
+        <Map defaultCenter={coimbatoreCenter} defaultZoom={12} mapTypeId="roadmap" gestureHandling="greedy" disableDefaultUI style={{ width: '100%', height: '100%' }}>
+          <TrafficLayer />
+          <RoutePolylines simulation={simulation} />
+          {activeVehicles.map((vehicle) => <Marker key={vehicle.id} position={projectToCoimbatore(vehicle.currentLocation)} title={`${vehicle.vehicleNumber} · ${vehicle.driverName}`} label={{ text: vehicle.vehicleNumber.slice(-3), color: '#071418', fontSize: '10px', fontWeight: '700' }} onClick={() => onVehicle(vehicle)} />)}
+          {incidents.slice(0, 4).map((incident) => <Marker key={incident.id} position={projectToCoimbatore({ lat: incident.lat, lng: incident.lng })} title={`${incident.id} · ${incident.type.replace('_', ' ')}`} label={{ text: '!', color: '#fff', fontSize: '13px', fontWeight: '800' }} onClick={() => onIncident(incident)} />)}
+          {warehouses.map((warehouse) => <Marker key={warehouse.id} position={projectToCoimbatore({ lat: warehouse.lat, lng: warehouse.lng })} title={warehouse.name} label={{ text: 'W', color: '#1a1710', fontSize: '10px', fontWeight: '800' }} />)}
+          {currentLocation && <Marker position={currentLocation} title="Current location" label={{ text: 'YOU', color: '#051014', fontSize: '9px', fontWeight: '800' }} />}
+        </Map>
+        <MapControls onLocate={setCurrentLocation} />
+      </APIProvider> : <div className="map-missing-key"><AlertTriangle size={20} /><b>Google Maps API key missing</b><span>Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local.</span></div>}
+      <div className="map-label map-title">COIMBATORE, INDIA <span>LIVE OPERATIONS MAP</span></div>
       <div className="map-legend"><div><i className="legend-line green" />Accessible</div><div><i className="legend-line yellow" />Caution</div><div><i className="legend-line orange" />High risk</div><div><i className="legend-line red" />Blocked</div></div>
-      <div className="map-controls"><button aria-label="Zoom in">+</button><button aria-label="Zoom out">−</button><button aria-label="Locate me"><Crosshair size={15} /></button></div>
       <div className="map-live"><span className="pulse-dot" />LIVE GPS FEED <b>247</b></div>
     </div>
   </div>
