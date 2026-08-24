@@ -13,3 +13,12 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+tsconfig.tsbuildinfo

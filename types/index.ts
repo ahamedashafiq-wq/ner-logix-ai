@@ -21,6 +21,7 @@ export interface WeatherData {
   temperatureC: number
   rainfallMm: number
   windKph: number
+  humidity?: number
   visibilityKm: number
   condition: string
   warning?: string
@@ -28,7 +29,7 @@ export interface WeatherData {
 }
 
 export type RouteAccessibility = 'accessible' | 'partially_accessible' | 'high_risk' | 'blocked'
-export type MapLayerId = 'traffic' | 'vehicles' | 'incidents' | 'warehouses' | 'hospitals' | 'deliveries' | 'risk'
+export type MapLayerId = 'roads' | 'traffic' | 'vehicles' | 'incidents' | 'warehouses' | 'hospitals' | 'deliveries' | 'risk' | 'weather'
 
 export interface District {
   id: string
@@ -37,12 +38,17 @@ export interface District {
   lat: number
   lng: number
   accessibilityScore?: number
+  connectivityScore?: number
+  connectivityStatus?: 'GOOD' | 'MODERATE' | 'HIGH RISK' | 'CRITICAL'
   roadStatus?: 'open' | 'slow' | 'restricted' | 'blocked'
   weatherRisk?: RiskLevel
   activeIncidents?: number
   delayedDeliveries?: number
   supplyStatus?: 'adequate' | 'watch' | 'shortage'
   riskLevel?: RiskLevel
+  population?: string
+  accessibleRoadsCount?: number
+  totalRoadsCount?: number
 }
 
 export interface Driver {
@@ -52,15 +58,26 @@ export interface Driver {
   status: 'on_duty' | 'off_duty' | 'break'
 }
 
+export type RoadStatus = 'accessible' | 'yellow' | 'orange' | 'blocked' | 'gray'
+
 export interface Road {
   id: string
   name: string
   startDistrict: string
   endDistrict: string
-  status: 'accessible' | 'yellow' | 'orange' | 'blocked'
+  status: RoadStatus
   riskLevel: RiskLevel
   affectedVehicles: string[]
   affectedDeliveries: string[]
+  rainfallMm?: number
+  trafficLevel?: 'low' | 'medium' | 'heavy' | 'extreme'
+  roadCondition?: 'Good' | 'Fair' | 'Poor' | 'Severely Damaged'
+  landslideProb?: number
+  floodRisk?: number
+  overallRisk?: number
+  delayMin?: number
+  lengthKm?: number
+  elevationM?: number
 }
 
 export interface Route {
@@ -76,6 +93,7 @@ export interface Route {
 
 export interface RouteCandidate {
   id: string
+  name?: string
   distance: number
   estimatedTime: number
   riskLevel: RiskLevel
@@ -88,6 +106,9 @@ export interface RouteCandidate {
   path?: GeoPoint[]
   summary?: string
   isDemoScore?: boolean
+  riskReduction?: number
+  additionalDistanceKm?: number
+  additionalTimeMin?: number
 }
 
 export interface Vehicle {
@@ -100,6 +121,7 @@ export interface Vehicle {
   speed: number
   status: 'available' | 'assigned' | 'on_route' | 'delayed' | 'stopped' | 'emergency' | 'maintenance' | 'offline'
   cargo?: string
+  cargoPriority?: 'critical' | 'high' | 'medium' | 'low'
   capacity: number
   currentLoad: number
   fuel: number
@@ -108,13 +130,26 @@ export interface Vehicle {
   origin?: string
   destination?: string
   eta?: string
+  deliveryPercentage?: number
   riskLevel: RiskLevel
   route?: Route
   isDemoGps?: boolean
 }
 
 export type DeliveryPriority = 'critical' | 'high' | 'medium' | 'low'
-export type DeliveryStatus = 'created' | 'scheduled' | 'assigned' | 'dispatched' | 'pickup' | 'in_transit' | 'delayed' | 'at_risk' | 'blocked' | 'rerouted' | 'delivered' | 'cancelled'
+export type DeliveryStatus =
+  | 'created'
+  | 'scheduled'
+  | 'assigned'
+  | 'dispatched'
+  | 'pickup'
+  | 'in_transit'
+  | 'delayed'
+  | 'at_risk'
+  | 'blocked'
+  | 'rerouted'
+  | 'delivered'
+  | 'cancelled'
 
 export interface Delivery {
   id: string
@@ -129,9 +164,24 @@ export interface Delivery {
   eta?: string
   createdAt: string
   riskLevel: RiskLevel
+  delayMinutes?: number
 }
 
-export type IncidentType = 'landslide' | 'flood' | 'road_damage' | 'bridge_damage' | 'heavy_rain' | 'traffic' | 'debris' | 'accident' | 'road_blocked' | 'vehicle_breakdown' | 'other'
+export type IncidentType =
+  | 'landslide'
+  | 'flood'
+  | 'road_damage'
+  | 'bridge_damage'
+  | 'heavy_rain'
+  | 'traffic'
+  | 'road_blocked'
+  | 'road_blockage'
+  | 'accident'
+  | 'infrastructure_failure'
+  | 'debris'
+  | 'vehicle_breakdown'
+  | 'other'
+
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical'
 export type IncidentStatus = 'new' | 'verified' | 'active' | 'resolved'
 
@@ -154,7 +204,21 @@ export interface Incident {
   photoDataUrl?: string
 }
 
-export type AlertType = 'road_blocked' | 'landslide_risk' | 'flood_risk' | 'heavy_rain' | 'traffic' | 'vehicle_delay' | 'supply_shortage' | 'route_change' | 'emergency'
+export type AlertType =
+  | 'road_blocked'
+  | 'landslide_risk'
+  | 'flood_risk'
+  | 'heavy_rain'
+  | 'traffic'
+  | 'vehicle_delay'
+  | 'supply_shortage'
+  | 'critical_supply'
+  | 'route_changed'
+  | 'route_change'
+  | 'severe_weather'
+  | 'connectivity_loss'
+  | 'emergency'
+
 export type AlertSeverity = 'info' | 'warning' | 'high' | 'critical'
 
 export interface Alert {
@@ -180,6 +244,8 @@ export interface Warehouse {
   lng: number
   capacity: number
   currentInventory: number
+  dailyConsumption?: number
+  daysRemaining?: number
   supplies: WarehouseSupply[]
 }
 
@@ -201,7 +267,7 @@ export interface Hospital {
 
 export interface Supply {
   id: string
-  category: 'medicines' | 'food' | 'construction' | 'agricultural' | 'rescue'
+  category: 'medicines' | 'food' | 'construction' | 'agricultural' | 'fuel' | 'rescue'
   name: string
   stock: number
   incoming: number
@@ -209,7 +275,20 @@ export interface Supply {
   minimumThreshold: number
   riskLevel: RiskLevel
   daysRemaining: number
+  priorityScore?: number
   warehouses: { id: string; quantity: number }[]
+}
+
+export interface RiskScoreBreakdown {
+  overallRisk: number
+  riskLevel: RiskLevel
+  landslideRisk: number
+  floodRisk: number
+  trafficRisk: number
+  roadDamageRisk: number
+  factors: string[]
+  confidence: number
+  predictionText: string
 }
 
 export interface Prediction {
@@ -219,7 +298,10 @@ export interface Prediction {
   floodProbability: number
   landslideProbability: number
   trafficProbability: number
+  roadDamageProbability?: number
   overallRisk: RiskLevel
+  riskScore?: number
+  factors?: string[]
   confidence: number
   timestamp: string
 }
@@ -236,6 +318,7 @@ export interface FieldReport {
   severity: IncidentSeverity
   description: string
   image?: string
+  photoDataUrl?: string
   timestamp: string
   synced: boolean
   syncState?: 'pending' | 'syncing' | 'synced' | 'offline'
@@ -283,6 +366,41 @@ export interface StateIncidentPoint {
   incidents: number
 }
 
+export interface DisasterSimulationParams {
+  rainfall: 'Normal' | 'Moderate' | 'Heavy' | 'Extreme'
+  floodLevelM: number
+  traffic: 'Low' | 'Moderate' | 'Heavy' | 'Extreme'
+  blockedRoadId: string
+  landslideProbability: number
+}
+
+export interface DisasterSimulationResult {
+  before: {
+    safeRoutes: number
+    highRisk: number
+    blocked: number
+  }
+  after: {
+    safeRoutes: number
+    highRisk: number
+    blocked: number
+    affectedVehicles: number
+    affectedDeliveries: number
+    affectedDistricts: number
+    alternateRoutesFound: number
+    averageDelayMin: number
+  }
+  appliedAt: string
+}
+
+export interface ScenarioTimelineEvent {
+  time: string
+  title: string
+  description: string
+  severity: 'info' | 'warning' | 'high' | 'critical'
+  completed: boolean
+}
+
 export interface AppState {
   user?: User
   isAuthenticated: boolean
@@ -291,11 +409,3 @@ export interface AppState {
   offlineMode: boolean
   lastSync: string
 }
-
-export type KpiItem = KpiItem
-export type LogisticsHealth = LogisticsHealth
-export type DeliveryStatus = DeliveryStatus
-export type DeliveryTrendPoint = DeliveryTrendPoint
-export type RiskTrendPoint = RiskTrendPoint
-export type RouteCandidate = RouteCandidate
-export type StateIncidentPoint = StateIncidentPoint

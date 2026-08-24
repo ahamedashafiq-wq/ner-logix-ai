@@ -1,0 +1,16 @@
+{
+  "name": "NER-LOGIX AI Logistics Command Center",
+  "short_name": "NER-LOGIX",
+  "description": "AI-Powered Logistics Accessibility Intelligence Platform for India's North Eastern Region",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
