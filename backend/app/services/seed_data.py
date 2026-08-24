@@ -66,8 +66,53 @@ def seed_database_if_empty(db: Session):
 
     # 5. Seed Incidents
     incidents_data = [
-        {"id": "INC-2048", "type": "landslide", "severity": "critical", "status": "active", "location": "NH-14 · Tamenglong Pass", "lat": 24.98, "lng": 93.62, "timestamp": "12 min ago", "description": "Massive slope failure and rockfall blocking both lanes after overnight 82mm torrential downpour.", "reported_by": "Field Unit 07", "affected_roads": ["NH-14"], "affected_vehicles": ["v3", "v5"], "confidence": 96.0},
-        {"id": "INC-2047", "type": "flood", "severity": "high", "status": "verified", "location": "Brahmaputra Bridge Approach · Guwahati", "lat": 26.18, "lng": 91.75, "timestamp": "28 min ago", "description": "Water level surging within 0.8m of carriageway. Heavy vehicle slow-down active.", "reported_by": "Assam Disaster Control", "affected_roads": ["NH-27"], "affected_vehicles": ["v2"], "confidence": 91.0},
+        {
+            "id": "INC-2048",
+            "type": "landslide",
+            "severity": "critical",
+            "status": "active",
+            "location": "NH-14 · Tamenglong Pass",
+            "lat": 24.98,
+            "lng": 93.62,
+            "district": "Tamenglong",
+            "state": "Manipur",
+            "road": "NH-14",
+            "timestamp": "12 min ago",
+            "reported_at": "12 min ago",
+            "updated_at": "5 min ago",
+            "description": "Massive slope failure and rockfall blocking both lanes after overnight 82mm torrential downpour.",
+            "source": "Field Officer",
+            "reported_by": "Field Officer Unit 07",
+            "verified": True,
+            "affected_roads": ["NH-14"],
+            "affected_vehicles": ["v3", "v5"],
+            "confidence": 96.0,
+            "is_demo": True
+        },
+        {
+            "id": "INC-2047",
+            "type": "flood",
+            "severity": "high",
+            "status": "verified",
+            "location": "Brahmaputra Bridge Approach · Guwahati",
+            "lat": 26.18,
+            "lng": 91.75,
+            "district": "Kamrup Metropolitan",
+            "state": "Assam",
+            "road": "NH-27",
+            "timestamp": "28 min ago",
+            "reported_at": "28 min ago",
+            "updated_at": "10 min ago",
+            "description": "Water level surging within 0.8m of carriageway. Heavy vehicle slow-down active.",
+            "source": "Government Feed",
+            "source_url": "https://sdma.assam.gov.in",
+            "reported_by": "Assam Disaster Management Control",
+            "verified": True,
+            "affected_roads": ["NH-27"],
+            "affected_vehicles": ["v2"],
+            "confidence": 91.0,
+            "is_demo": True
+        },
     ]
     for inc in incidents_data:
         db.add(IncidentModel(**inc))

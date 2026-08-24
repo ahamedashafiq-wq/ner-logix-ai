@@ -72,16 +72,27 @@ class IncidentCreate(BaseModel):
     lat: float
     lng: float
     description: str
-    reportedBy: str = "Command Center"
+    reportedBy: str = "Field Officer"
+    source: Optional[str] = "Field Officer"
+    sourceUrl: Optional[str] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
+    road: Optional[str] = None
     affectedRoads: List[str] = []
     affectedVehicles: List[str] = []
     confidence: float = 90.0
+    verified: bool = True
     photoDataUrl: Optional[str] = None
+    isDemo: bool = False
 
 class IncidentSchema(IncidentCreate):
     id: str
     status: str = "active"
+    reportedAt: str = "Just now"
+    updatedAt: str = "Just now"
     timestamp: str = "Just now"
+    expiresAt: Optional[str] = None
+
 
 class AlertSchema(BaseModel):
     id: str

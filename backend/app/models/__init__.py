@@ -100,13 +100,24 @@ class IncidentModel(Base):
     location = Column(String, nullable=False)
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
-    timestamp = Column(String, default="Just now")
+    district = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    road = Column(String, nullable=True)
     description = Column(Text, default="")
-    reported_by = Column(String, default="Command Center")
+    source = Column(String, default="Field Officer")  # Field Officer, Weather Service, Government Feed, Verified Authority, System Detection
+    source_url = Column(String, nullable=True)
+    reported_by = Column(String, default="Field Officer")
+    reported_at = Column(String, default="Just now")
+    updated_at = Column(String, default="Just now")
+    timestamp = Column(String, default="Just now")
+    verified = Column(Boolean, default=True)
+    confidence = Column(Float, default=90.0)
+    expires_at = Column(String, nullable=True)
     affected_roads = Column(JSON, default=list)
     affected_vehicles = Column(JSON, default=list)
-    confidence = Column(Float, default=90.0)
     photo_data_url = Column(Text, nullable=True)
+    is_demo = Column(Boolean, default=False)
+
 
 class AlertModel(Base):
     __tablename__ = "alerts"

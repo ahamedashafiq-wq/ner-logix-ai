@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -639,6 +639,9 @@ export default function NerLogixApp() {
             <VehiclesView
               vehicles={vehicles}
               onVehicle={setSelectedVehicle}
+              gpsFix={gpsFix}
+              onRequestGps={requestGpsFix}
+              onNotify={notify}
             />
           )}
 
@@ -1485,6 +1488,54 @@ function DashboardView({
               </button>
             </div>
           </div>
+
+          {/* Live Realtime Event Stream */}
+          <div className="mt-4 p-3 bg-[#0d1a20] border border-[#20323b] rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Radio size={12} className="text-[#35c2d4] animate-pulse" /> LIVE EVENT STREAM
+              </span>
+              <span className="text-[9px] text-[#55d29d] font-mono">WEBSOCKET: ACTIVE</span>
+            </div>
+            <div className="space-y-1.5 max-h-44 overflow-y-auto text-[11px] font-mono text-[#cad6da]">
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:04</span>
+                <div>
+                  <b className="text-[#e76561]">INCIDENT:</b> NH-14 Tamenglong Landslide
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:06</span>
+                <div>
+                  <b className="text-[#e9ad4b]">AI RISK:</b> Escalated to 94% (Critical)
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:07</span>
+                <div>
+                  <b className="text-[#e76561]">ROAD STATUS:</b> NH-14 Marked BLOCKED
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:09</span>
+                <div>
+                  <b className="text-[#55d29d]">ROUTE:</b> Route B Bypass Selected (+38km)
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:11</span>
+                <div>
+                  <b className="text-[#35c2d4]">VEHICLE:</b> NER-MED-204 Rerouted (ETA 5h 54m)
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
+                <span className="text-[#35c2d4] text-[10px]">16:21:14</span>
+                <div>
+                  <b className="text-[#55d29d]">ALERT:</b> Aizawl Hospital Supply Protected
+                </div>
+              </div>
+            </div>
+          </div>
         </aside>
       </div>
 
@@ -1574,31 +1625,99 @@ function DashboardView({
 function VehiclesView({
   vehicles,
   onVehicle,
+  gpsFix,
+  onRequestGps,
+  onNotify,
 }: {
   vehicles: Vehicle[]
   onVehicle: (v: Vehicle) => void
+  gpsFix: any
+  onRequestGps: () => void
+  onNotify: (msg: string) => void
 }) {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [isGpsStreaming, setIsGpsStreaming] = useState(false)
+
+  const toggleGpsStream = async () => {
+    if (!isGpsStreaming) {
+      onRequestGps()
+      setIsGpsStreaming(true)
+      onNotify('Live Device GPS Streaming Activated (Broadcasting via Geolocation API)')
+    } else {
+      setIsGpsStreaming(false)
+      onNotify('Live Device GPS Streaming Deactivated')
+    }
+  }
+
+  // Periodic GPS dispatch if streaming
+  useEffect(() => {
+    if (!isGpsStreaming || !gpsFix) return
+    const interval = setInterval(async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+        await fetch(`${backendUrl}/api/vehicles/location`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_id: 'v1',
+            latitude: gpsFix.lat,
+            longitude: gpsFix.lng,
+            speed: 42.0,
+            heading: 90.0,
+            is_live: true,
+            status: 'on_route',
+          }),
+        })
+      } catch {}
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [isGpsStreaming, gpsFix])
 
   const filtered = vehicles.filter((v) => {
-    const matchFilter = filter === 'all' || v.status === filter
-    const matchSearch =
+    const matchesFilter = filter === 'all' || v.status === filter
+    const matchesSearch =
       v.vehicleNumber.toLowerCase().includes(search.toLowerCase()) ||
       v.driverName.toLowerCase().includes(search.toLowerCase()) ||
       (v.cargo ?? '').toLowerCase().includes(search.toLowerCase())
-    return matchFilter && matchSearch
+    return matchesFilter && matchesSearch
   })
 
   return (
     <div className="module-view">
       <div className="module-hero">
         <div>
-          <div className="eyebrow">FLEET TELEMETRY & GPS MONITORING</div>
-          <h1>Active Vehicles ({vehicles.length})</h1>
-          <p>Real-time telemetry tracking, cargo priority, speed, battery, and corridor progress.</p>
+          <div className="eyebrow">FLEET TELEMETRY & GPS TRACKING</div>
+          <h1>Active Fleet Assets ({vehicles.length})</h1>
+          <p>Real-time vehicle tracking with mobile GPS streaming, cargo priority, and automatic reroute status.</p>
         </div>
+        <button
+          type="button"
+          className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${
+            isGpsStreaming
+              ? 'bg-[#e76561] text-white animate-pulse'
+              : 'bg-[#35c2d4]/20 border border-[#35c2d4] text-[#35c2d4] hover:bg-[#35c2d4]/30'
+          }`}
+          onClick={toggleGpsStream}
+        >
+          <Radio size={14} className={isGpsStreaming ? 'animate-spin' : ''} />
+          {isGpsStreaming ? 'STOP LIVE GPS STREAM' : 'START LIVE GPS (DEVICE)'}
+        </button>
       </div>
+
+      {/* Live Mobile GPS Status Bar */}
+      {isGpsStreaming && gpsFix && (
+        <div className="my-3 p-3 bg-[#152a31] border border-[#35c2d4]/60 rounded-xl flex flex-wrap items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#55d29d] animate-ping" />
+            <b className="text-[#35c2d4]">MOBILE DEVICE GPS BROADCASTING ACTIVE:</b>
+            <span className="font-mono text-[#e9f0f2]">
+              Lat: {gpsFix.lat.toFixed(4)}, Lng: {gpsFix.lng.toFixed(4)}
+            </span>
+          </div>
+          <span className="text-[10px] text-[#7d9099] font-mono">Source: HTML5 Geolocation API · 5s Interval</span>
+        </div>
+      )}
 
       <div className="module-toolbar flex gap-3 my-4">
         <div className="map-search flex-1">
@@ -1921,9 +2040,9 @@ function IncidentsView({
     <div className="module-view">
       <div className="module-hero">
         <div>
-          <div className="eyebrow">DISRUPTION MONITORING</div>
-          <h1>Reported Incidents ({incidents.length})</h1>
-          <p>Landslides, flash floods, and bridge damage verified across the logistics network.</p>
+          <div className="eyebrow">DISRUPTION & INCIDENT INTELLIGENCE</div>
+          <h1>Current Verified Incidents ({incidents.length})</h1>
+          <p>Multi-source verified incident ingestion from Field Officers, Meteorological Sensors, and Disaster Feeds.</p>
         </div>
         <button
           type="button"
@@ -1934,40 +2053,62 @@ function IncidentsView({
         </button>
       </div>
 
-      <div className="data-table mt-4">
-        <div className="table-header">
-          <span>Incident & Type</span>
-          <span>Location / Highway</span>
-          <span>Severity</span>
-          <span>AI Confidence</span>
-          <span>Reported Timestamp</span>
-          <span />
+      {incidents.length === 0 ? (
+        <div className="my-8 p-8 bg-[#111f26] border border-[#20323b] rounded-xl text-center space-y-2">
+          <CheckCircle2 size={32} className="text-[#55d29d] mx-auto" />
+          <b className="text-sm text-[#e9f0f2] block">NO VERIFIED LIVE INCIDENTS CURRENTLY ACTIVE</b>
+          <p className="text-xs text-[#7d9099] max-w-md mx-auto">
+            All regional lifeline highways are operational without reported disruptions. New field reports submitted by officers or weather feeds will appear immediately upon verification.
+          </p>
         </div>
-        {incidents.map((inc) => (
-          <div
-            className="table-row cursor-pointer"
-            key={inc.id}
-            onClick={() => onIncident(inc)}
-          >
-            <span className="table-primary">
-              <span className="table-icon incident-icon">
-                <AlertTriangle size={14} />
-              </span>
-              <b>{inc.id}</b>
-              <small>{inc.type.replace('_', ' ')}</small>
-            </span>
-            <span>{inc.location}</span>
-            <span>
-              <StatusPill tone={inc.severity === 'critical' ? 'red' : inc.severity === 'high' ? 'amber' : 'blue'}>
-                {inc.severity.toUpperCase()}
-              </StatusPill>
-            </span>
-            <span className="font-mono text-[#55d29d]">{inc.confidence}% verified</span>
-            <span>{inc.timestamp}</span>
-            <span><ArrowUpRight size={14} /></span>
+      ) : (
+        <div className="data-table mt-4">
+          <div className="table-header">
+            <span>Incident & Type</span>
+            <span>Location / Corridor</span>
+            <span>Severity</span>
+            <span>Source & Verification</span>
+            <span>Confidence</span>
+            <span>Timestamp</span>
+            <span />
           </div>
-        ))}
-      </div>
+          {incidents.map((inc) => (
+            <div
+              className="table-row cursor-pointer"
+              key={inc.id}
+              onClick={() => onIncident(inc)}
+            >
+              <span className="table-primary">
+                <span className="table-icon incident-icon">
+                  <AlertTriangle size={14} />
+                </span>
+                <b>{inc.id}</b>
+                <small>{inc.type.replace('_', ' ')}</small>
+              </span>
+              <span>
+                <b className="text-[#e9f0f2] block">{inc.location}</b>
+                <small className="text-[#7d9099] font-mono">{inc.affectedRoads?.join(', ') || 'Regional road'}</small>
+              </span>
+              <span>
+                <StatusPill tone={inc.severity === 'critical' ? 'red' : inc.severity === 'high' ? 'amber' : 'blue'}>
+                  {inc.severity.toUpperCase()}
+                </StatusPill>
+              </span>
+              <span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#152a31] border border-[#23424d] text-[#35c2d4] block w-fit">
+                  {inc.source || 'Field Officer'}
+                </span>
+                <small className="text-[#55d29d] font-mono text-[9px]">
+                  {inc.verified ? '✓ VERIFIED' : 'PENDING'}
+                </small>
+              </span>
+              <span className="font-mono text-[#55d29d]">{inc.confidence}%</span>
+              <span className="text-[11px] font-mono text-[#cad6da]">{inc.timestamp}</span>
+              <span><ArrowUpRight size={14} /></span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

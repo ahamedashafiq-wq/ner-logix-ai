@@ -202,6 +202,15 @@ export interface Incident {
   image?: string
   reporter?: string
   photoDataUrl?: string
+  source?: 'Field Officer' | 'Weather Service' | 'Government Feed' | 'Verified Authority' | 'System Detection' | string
+  sourceUrl?: string
+  reportedAt?: string
+  updatedAt?: string
+  verified?: boolean
+  district?: string
+  state?: string
+  road?: string
+  isDemo?: boolean
 }
 
 export type AlertType =
