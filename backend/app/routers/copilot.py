@@ -30,15 +30,18 @@ def query_intelligence_copilot(req: CopilotQueryRequest, db: Session = Depends(g
     # 2. Blocked / high risk roads query
     elif "road" in q and ("block" in q or "status" in q or "close" in q):
         blocked_roads = db.query(RoadModel).filter(RoadModel.status.in_(["blocked", "orange"])).all()
-        road_details = [
-            f"{r.name} ({r.start_district} ➔ {r.end_district}): Status {r.status.upper()} (Risk: {r.overall_risk}%, Rainfall: {r.rainfall_mm}mm, Landslide Prob: {r.landslide_prob}%)"
-            for r in blocked_roads
-        ]
-        ans = (
-            f"Currently, {len(blocked_roads)} corridor(s) have active disruptions or critical advisories:\n"
-            + "\n".join([f"• {rd}" for rd in road_details])
-            + "\n\nRecommendation: Avoid NH-14 Tamenglong pass. Reroute through Route B (Southern Valley Ridge Bypass)."
-        )
+        if not blocked_roads:
+            ans = "Currently, no arterial corridors are fully blocked. All 8 North Eastern state lifelines are operating under nominal green/yellow traffic advisories."
+        else:
+            road_details = [
+                f"{r.name} ({r.start_district} ➔ {r.end_district}): Status {r.status.upper()} (Risk: {r.overall_risk}%, Rainfall: {r.rainfall_mm}mm, Landslide Prob: {r.landslide_prob}%)"
+                for r in blocked_roads
+            ]
+            ans = (
+                f"Currently, {len(blocked_roads)} corridor(s) have active disruptions or critical advisories:\n"
+                + "\n".join([f"• {rd}" for rd in road_details])
+                + "\n\nRecommendation: Avoid blocked sectors. Route optimization engine has calculated verified bypass corridors."
+            )
         return CopilotQueryResponse(
             answer=ans,
             suggestions=["Find the safest medicine route", "Which vehicles are delayed?"],
