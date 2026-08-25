@@ -91,24 +91,47 @@ export interface Route {
   waypoints: GeoPoint[]
 }
 
+export interface RouteSegment {
+  name: string
+  fromDistrict: string
+  toDistrict: string
+  distanceKm: number
+  durationMin: number
+  trafficLevel: string
+  rainfallMm: number
+  landslideRisk: number
+  floodRisk: number
+  roadCondition: string
+  bridgeCondition: string
+  activeIncidentsCount: number
+  status: string
+}
+
 export interface RouteCandidate {
   id: string
   name?: string
   distance: number
   estimatedTime: number
   riskLevel: RiskLevel
+  riskScore?: number
   trafficLevel: 'low' | 'medium' | 'high'
+  trafficDelayMin?: number
+  weatherCondition?: string
+  activeIncidentsCount?: number
   score: number
   reason?: string
   isRecommended: boolean
   accessibility?: RouteAccessibility
   durationInTrafficMin?: number
   path?: GeoPoint[]
+  segments?: RouteSegment[]
   summary?: string
   isDemoScore?: boolean
   riskReduction?: number
   additionalDistanceKm?: number
   additionalTimeMin?: number
+  confidence?: number
+  cargoSuitability?: string
 }
 
 export interface Vehicle {

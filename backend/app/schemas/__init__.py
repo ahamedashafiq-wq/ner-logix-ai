@@ -179,10 +179,33 @@ class RiskPredictionResponse(BaseModel):
     contributing_factors: List[str]
     recommended_action: str
 
+class GeoPointSchema(BaseModel):
+    lat: float
+    lng: float
+
+class RouteSegmentSchema(BaseModel):
+    name: str
+    fromDistrict: str
+    toDistrict: str
+    distanceKm: float
+    durationMin: float
+    trafficLevel: str = "medium"
+    rainfallMm: float = 20.0
+    landslideRisk: float = 15.0
+    floodRisk: float = 10.0
+    roadCondition: str = "Good"
+    bridgeCondition: str = "Good"
+    activeIncidentsCount: int = 0
+    status: str = "accessible"
+
 class RouteOptimizationRequest(BaseModel):
-    origin: str
-    destination: str
-    vehicle: Optional[str] = "NER-MED-204"
+    origin: Optional[str] = "Guwahati"
+    destination: Optional[str] = "Imphal"
+    origin_lat: Optional[float] = None
+    origin_lng: Optional[float] = None
+    destination_lat: Optional[float] = None
+    destination_lng: Optional[float] = None
+    vehicle_id: Optional[str] = "NER-MED-204"
     cargo: Optional[str] = "Emergency Medicines"
     priority: Optional[str] = "critical"
     blockedRoadId: Optional[str] = None
@@ -192,8 +215,13 @@ class RouteCandidateSchema(BaseModel):
     name: str
     distance: float
     estimatedTime: float
+    durationInTrafficMin: Optional[float] = None
     riskLevel: str
+    riskScore: Optional[int] = None
     trafficLevel: str
+    trafficDelayMin: Optional[int] = 0
+    weatherCondition: Optional[str] = "Clear"
+    activeIncidentsCount: Optional[int] = 0
     score: int
     reason: str
     isRecommended: bool
@@ -201,6 +229,66 @@ class RouteCandidateSchema(BaseModel):
     riskReduction: float = 0.0
     additionalDistanceKm: float = 0.0
     additionalTimeMin: float = 0.0
+    summary: Optional[str] = None
+    confidence: Optional[float] = 0.92
+    cargoSuitability: Optional[str] = "High"
+    path: Optional[List[GeoPointSchema]] = []
+    segments: Optional[List[RouteSegmentSchema]] = []
+
+class LocationWeatherResponse(BaseModel):
+    latitude: float
+    longitude: float
+    district: str
+    state: str
+    temperatureC: float
+    rainfallMm: float
+    humidity: float
+    windKph: float
+    visibilityKm: float
+    soilMoisture: Optional[float] = 45.0
+    condition: str
+    warning: Optional[str] = None
+    stationDistanceKm: float
+    source: str = "Open-Meteo"
+    timestamp: str
+
+class NearbyIncidentsResponse(BaseModel):
+    centerLat: float
+    centerLng: float
+    radiusKm: float
+    totalCount: int
+    incidents: List[IncidentSchema]
+
+class NearbyMapResponse(BaseModel):
+    centerLat: float
+    centerLng: float
+    radiusKm: float
+    vehicles: List[VehicleSchema]
+    incidents: List[IncidentSchema]
+    roads: List[RoadSchema]
+    weather: Optional[LocationWeatherResponse] = None
+
+class RecommendationRequest(BaseModel):
+    origin_lat: float
+    origin_lng: float
+    destination_lat: float
+    destination_lng: float
+    cargo_type: str = "Emergency Medicines"
+    priority: str = "critical"
+    vehicle_id: Optional[str] = None
+
+class RecommendationResponse(BaseModel):
+    recommended_route_id: str
+    recommended_route_name: str
+    reason: str
+    cargo_type: str
+    priority: str
+    risk_score: int
+    eta_minutes: float
+    distance_km: float
+    confidence: float
+    warnings: List[str] = []
+    candidates: List[RouteCandidateSchema]
 
 class DisasterSimulationRequest(BaseModel):
     rainfall: str = "Heavy"

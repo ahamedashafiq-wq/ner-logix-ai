@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -58,7 +58,7 @@ import { useGps } from '@/hooks/use-gps'
 import { RegionMap } from '@/components/region-map'
 import { t, type AppLanguage } from '@/lib/i18n'
 import { calculateDetailedRisk } from '@/services/risk-prediction'
-import { calculateRiskAwareRouteCandidates } from '@/services/routes'
+import { calculateRiskAwareRouteCandidates, requestDrivingRoutes } from '@/services/routes'
 import { computeSupplyPriorityScore } from '@/services/logistics'
 import type {
   Alert,
@@ -219,6 +219,76 @@ export default function NerLogixApp() {
     },
   ])
   const [toast, setToast] = useState('')
+
+  // Location-Aware Asset & Route Selection State
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('v1')
+  const [selectedDestinationId, setSelectedDestinationId] = useState<string>('h4')
+  const [selectedCargo, setSelectedCargo] = useState<string>('Emergency Medicines')
+  const [selectedPriority, setSelectedPriority] = useState<string>('critical')
+  const [dynamicCandidates, setDynamicCandidates] = useState<RouteCandidate[]>([])
+  const [activeLocationWeather, setActiveLocationWeather] = useState<any>(null)
+  const [locationNearbyIncidents, setLocationNearbyIncidents] = useState<Incident[]>([])
+  const [incidentFilterMode, setIncidentFilterMode] = useState<'all' | 'nearby'>('all')
+
+  const activeVehicle = useMemo(() => {
+    return vehicles.find((v) => v.id === selectedVehicleId) || vehicles[0]
+  }, [vehicles, selectedVehicleId])
+
+  const activeDestination = useMemo(() => {
+    return (
+      hospitals.find((h) => h.id === selectedDestinationId) ||
+      warehouses.find((w) => w.id === selectedDestinationId) ||
+      hospitals[3] ||
+      hospitals[0]
+    )
+  }, [hospitals, warehouses, selectedDestinationId])
+
+  // Live Location-Aware Route & Weather Recalculation
+  const recalculateLocationData = useCallback(async () => {
+    if (!activeVehicle || !activeDestination) return
+    const origPt = activeVehicle.currentLocation
+    const destPt = { lat: activeDestination.lat, lng: activeDestination.lng }
+
+    try {
+      const routeRes = await requestDrivingRoutes(
+        origPt,
+        destPt,
+        incidents,
+        weatherList[0] || null,
+        primaryBlocked,
+        selectedCargo,
+        selectedPriority,
+        activeVehicle.id
+      )
+      if (routeRes.candidates && routeRes.candidates.length > 0) {
+        setDynamicCandidates(routeRes.candidates)
+      }
+    } catch {}
+
+    // Fetch live location-specific weather
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+      const wRes = await fetch(`${backendUrl}/api/weather/location?lat=${destPt.lat}&lng=${destPt.lng}`)
+      if (wRes.ok) {
+        const wData = await wRes.json()
+        setActiveLocationWeather(wData)
+      }
+    } catch {}
+
+    // Fetch nearby incidents within 60km of vehicle location
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+      const incRes = await fetch(`${backendUrl}/api/incidents/nearby?lat=${origPt.lat}&lng=${origPt.lng}&radius=60`)
+      if (incRes.ok) {
+        const incData = await incRes.json()
+        setLocationNearbyIncidents(incData.incidents || [])
+      }
+    } catch {}
+  }, [activeVehicle, activeDestination, incidents, weatherList, primaryBlocked, selectedCargo, selectedPriority])
+
+  useEffect(() => {
+    void recalculateLocationData()
+  }, [recalculateLocationData])
 
   const notify = (msg: string) => {
     setToast(msg)
@@ -564,6 +634,114 @@ export default function NerLogixApp() {
             </div>
           </div>
 
+          {/* Location & Asset Control Bar */}
+          <div className="bg-[#111f26] border border-[#20323b] rounded-xl p-3 mb-4 space-y-3 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1b2b33] pb-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-[#35c2d4]/20 text-[#35c2d4]">
+                  <Crosshair size={15} />
+                </span>
+                <div>
+                  <b className="text-xs text-[#e9f0f2] block">LOCATION-AWARE DISPATCH & ROUTE INTELLIGENCE</b>
+                  <span className="text-[10px] text-[#7d9099]">
+                    Select any fleet vehicle and target destination to dynamically query GPS coordinates, live weather, nearby incidents, and alternative routes.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeLocationWeather && (
+                  <span className="px-2 py-1 rounded bg-[#101d23] border border-[#20323b] text-[10px] text-[#55d29d] font-mono flex items-center gap-1">
+                    <CloudRain size={12} /> {activeLocationWeather.district}: {activeLocationWeather.temperatureC}°C, {activeLocationWeather.rainfallMm}mm rain
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void recalculateLocationData()
+                    notify('Recalculating dynamic routes and location data...')
+                  }}
+                  className="px-2.5 py-1 rounded bg-[#35c2d4]/20 hover:bg-[#35c2d4]/30 border border-[#35c2d4] text-[#35c2d4] text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                >
+                  <RefreshCw size={11} /> RECALCULATE
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+              {/* Vehicle Selector */}
+              <div>
+                <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">1. SELECT FLEET ASSET (ORIGIN GPS)</label>
+                <select
+                  className="w-full bg-[#0d1a20] border border-[#20323b] focus:border-[#35c2d4] p-1.5 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
+                  value={selectedVehicleId}
+                  onChange={(e) => setSelectedVehicleId(e.target.value)}
+                >
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.vehicleNumber} · {v.origin} ({v.currentLocation.lat.toFixed(2)}, {v.currentLocation.lng.toFixed(2)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Destination Selector */}
+              <div>
+                <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">2. TARGET DESTINATION (FACILITY)</label>
+                <select
+                  className="w-full bg-[#0d1a20] border border-[#20323b] focus:border-[#35c2d4] p-1.5 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
+                  value={selectedDestinationId}
+                  onChange={(e) => setSelectedDestinationId(e.target.value)}
+                >
+                  <optgroup label="Hospitals & Medical Trauma Centers">
+                    {hospitals.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name} ({h.lat.toFixed(2)}, {h.lng.toFixed(2)})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Regional Storage & Supply Warehouses">
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.lat.toFixed(2)}, {w.lng.toFixed(2)})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Cargo Selector */}
+              <div>
+                <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">3. CARGO PROFILE</label>
+                <select
+                  className="w-full bg-[#0d1a20] border border-[#20323b] focus:border-[#35c2d4] p-1.5 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
+                  value={selectedCargo}
+                  onChange={(e) => setSelectedCargo(e.target.value)}
+                >
+                  <option value="Emergency Medicines">Emergency Medicines & Blood Plasma</option>
+                  <option value="Oxygen Cylinders">Oxygen Cylinders</option>
+                  <option value="Vaccines (Cold-chain)">Vaccines (Cold-chain)</option>
+                  <option value="Food Grains (FCI Supply)">Food Grains & Pulses</option>
+                  <option value="Fuel & Diesel Drums">High-Altitude Diesel Fuel</option>
+                  <option value="General Cargo">General Logistics Cargo</option>
+                </select>
+              </div>
+
+              {/* Priority Selector */}
+              <div>
+                <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">4. DISPATCH PRIORITY</label>
+                <select
+                  className="w-full bg-[#0d1a20] border border-[#20323b] focus:border-[#35c2d4] p-1.5 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
+                  value={selectedPriority}
+                  onChange={(e) => setSelectedPriority(e.target.value)}
+                >
+                  <option value="critical">Critical (Zero Hazard Tolerance)</option>
+                  <option value="high">High Priority</option>
+                  <option value="medium">Medium Standard</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Emergency Alert Banner */}
           {emergency && (
             <div className="emergency-banner animate-pulse">
@@ -597,6 +775,7 @@ export default function NerLogixApp() {
               simulation={simulation}
               emergency={emergency}
               primaryBlocked={primaryBlocked}
+              dynamicCandidates={dynamicCandidates}
               onVehicle={setSelectedVehicle}
               onIncident={setSelectedIncident}
               onRoadSelect={setSelectedRoad}
@@ -665,6 +844,8 @@ export default function NerLogixApp() {
           {activeTab === 'Incidents' && (
             <IncidentsView
               incidents={incidents}
+              nearbyIncidents={locationNearbyIncidents}
+              selectedLocationName={activeVehicle?.origin || 'Selected Asset'}
               onIncident={setSelectedIncident}
               onNewIncident={() => setShowReportModal(true)}
             />
@@ -1333,6 +1514,7 @@ function DashboardView({
   simulation,
   emergency,
   primaryBlocked,
+  dynamicCandidates,
   onVehicle,
   onIncident,
   onRoadSelect,
@@ -1355,6 +1537,7 @@ function DashboardView({
   simulation: boolean
   emergency: boolean
   primaryBlocked: boolean
+  dynamicCandidates?: RouteCandidate[]
   onVehicle: (v: Vehicle) => void
   onIncident: (i: Incident) => void
   onRoadSelect: (r: Road) => void
@@ -1538,6 +1721,80 @@ function DashboardView({
           </div>
         </aside>
       </div>
+
+      {/* Live Location-Aware Route Comparison Strip */}
+      {dynamicCandidates && dynamicCandidates.length > 0 && (
+        <div className="mt-4 p-4 bg-[#111f26] border border-[#20323b] rounded-xl space-y-3 shadow-lg">
+          <div className="flex items-center justify-between border-b border-[#1b2b33] pb-2">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded bg-[#35c2d4]/20 text-[#35c2d4]">
+                <RouteIcon size={16} />
+              </span>
+              <div>
+                <b className="text-xs text-[#e9f0f2] block uppercase tracking-wider">
+                  LOCATION-AWARE MULTI-CORRIDOR ROUTE COMPARISON (LIVE RECALCULATED)
+                </b>
+                <span className="text-[10px] text-[#7d9099]">
+                  Dynamic multicriteria paths evaluated from selected fleet asset coordinates to target destination.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-[#35c2d4] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+              onClick={() => onNav('Routes')}
+            >
+              Open Route Optimizer <ArrowUpRight size={13} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {dynamicCandidates.map((c) => (
+              <div
+                key={c.id}
+                className={`p-3.5 rounded-xl border ${
+                  c.isRecommended
+                    ? 'bg-[#152a31] border-[#35c2d4] shadow-md shadow-[#35c2d4]/10'
+                    : c.accessibility === 'blocked'
+                    ? 'bg-[#251b20] border-[#e76561]/50'
+                    : 'bg-[#0d1a20] border-[#20323b]'
+                } space-y-2.5 text-xs`}
+              >
+                <div className="flex justify-between items-start">
+                  <b className="text-[#e9f0f2] text-xs font-bold">{c.name}</b>
+                  {c.isRecommended && (
+                    <span className="px-2 py-0.5 bg-[#35c2d4] text-[#071014] rounded text-[9px] font-bold tracking-wider">
+                      RECOMMENDED
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 p-1.5 rounded bg-[#081116] border border-[#1b2b33] text-center font-mono text-[10px]">
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">Distance</span>
+                    <b className="text-[#e9f0f2]">{c.distance} km</b>
+                  </div>
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">ETA</span>
+                    <b className="text-[#35c2d4]">{Math.floor(c.estimatedTime / 60)}h {Math.round(c.estimatedTime % 60)}m</b>
+                  </div>
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">AI Risk</span>
+                    <b className={c.riskLevel === 'low' ? 'text-[#55d29d]' : c.riskLevel === 'critical' ? 'text-[#e76561]' : 'text-[#e9ad4b]'}>
+                      {c.riskScore ?? 30}/100
+                    </b>
+                  </div>
+                </div>
+
+                <div className="p-2 rounded bg-[#0a141a] border border-[#1b2b33] text-[10px] text-[#8e9fa6] leading-relaxed">
+                  <b className="text-[#35c2d4] block mb-0.5">GROUNDED RATIONALE:</b>
+                  {c.reason}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lower Grid: Analytics Charts & Health Score */}
       <div className="lower-grid">
@@ -1875,18 +2132,47 @@ function RoutesView({
 }) {
   const [origin, setOrigin] = useState('Guwahati')
   const [destination, setDestination] = useState('Imphal')
+  const [cargo, setCargo] = useState('Emergency Medicines')
+  const [priority, setPriority] = useState('critical')
+  const [loading, setLoading] = useState(false)
   const [candidates, setCandidates] = useState<RouteCandidate[]>([])
 
-  const handleOptimize = () => {
-    const list = calculateRiskAwareRouteCandidates({
-      origin,
-      destination,
-      incidents,
-      weather,
-      primaryBlocked: roads.some((r) => r.status === 'blocked'),
-    })
-    setCandidates(list)
-    onNotify('AI Route Optimizer computed 3 candidate corridors with multi-factor risk weighting.')
+  const CITY_COORDS: Record<string, GeoPoint> = {
+    Guwahati: { lat: 26.1445, lng: 91.7362 },
+    Shillong: { lat: 25.5788, lng: 91.8933 },
+    Silchar: { lat: 24.8333, lng: 92.7789 },
+    Dimapur: { lat: 25.9068, lng: 93.7273 },
+    Kohima: { lat: 25.6751, lng: 94.1086 },
+    Imphal: { lat: 24.8170, lng: 93.9368 },
+    Aizawl: { lat: 23.7271, lng: 92.7176 },
+    Agartala: { lat: 23.8315, lng: 91.2868 },
+    Itanagar: { lat: 27.0844, lng: 93.6053 },
+    Siliguri: { lat: 26.7271, lng: 88.3953 },
+    Gangtok: { lat: 27.3389, lng: 88.6065 },
+  }
+
+  const handleOptimize = async () => {
+    setLoading(true)
+    const origPt = CITY_COORDS[origin] || CITY_COORDS.Guwahati
+    const destPt = CITY_COORDS[destination] || CITY_COORDS.Imphal
+    
+    try {
+      const res = await requestDrivingRoutes(
+        origPt,
+        destPt,
+        incidents,
+        weather,
+        roads.some((r) => r.status === 'blocked'),
+        cargo,
+        priority
+      )
+      setCandidates(res.candidates)
+      onNotify(`Dynamic GIS Route Optimizer computed ${res.candidates.length} candidate corridors for ${origin} ➔ ${destination}.`)
+    } catch {
+      onNotify('Route optimization error. Displaying offline topological path.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -1894,51 +2180,86 @@ function RoutesView({
       <div className="module-hero">
         <div>
           <div className="eyebrow">HIGHWAY ACCESSIBILITY & ROUTE OPTIMIZATION</div>
-          <h1>Corridors & Multi-Route Optimizer</h1>
-          <p>Risk-aware route cost optimization considering terrain slope, flood stage, and landslide probability.</p>
+          <h1>Multi-Corridor GIS Route Optimizer</h1>
+          <p>Location-aware route optimization factoring in terrain slope, live weather, active incidents, and cargo criticality.</p>
         </div>
       </div>
 
       {/* Interactive Route Optimizer Engine */}
-      <div className="p-4 bg-[#111f26] border border-[#20323b] rounded-lg space-y-4">
-        <div className="flex items-center gap-2 text-sm font-bold text-[#35c2d4]">
-          <Zap size={16} />
-          <span>Interactive AI Route Optimizer</span>
+      <div className="p-4 bg-[#111f26] border border-[#20323b] rounded-lg space-y-4 shadow-lg">
+        <div className="flex items-center justify-between border-b border-[#1b2b33] pb-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-[#35c2d4]">
+            <Zap size={16} />
+            <span>Interactive Multi-Criteria AI Route Optimizer</span>
+          </div>
+          <span className="text-[10px] text-[#55d29d] font-mono">ENGINE: NETWORKX GRAPH · GROUNDED</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
-            <label className="block text-[10px] text-[#7d9099] mb-1">Origin City</label>
+            <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">Origin Hub / Depot</label>
             <select
-              className="w-full bg-[#0d1a20] border border-[#20323b] p-2 rounded text-xs text-[#e9f0f2]"
+              className="w-full bg-[#0d1a20] border border-[#20323b] p-2 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
             >
-              <option value="Guwahati">Guwahati (Central Hub)</option>
-              <option value="Shillong">Shillong (Regional Hub)</option>
-              <option value="Siliguri">Siliguri (North Corridor)</option>
+              <option value="Guwahati">Guwahati (Central Hub · Assam)</option>
+              <option value="Shillong">Shillong (Regional Hub · Meghalaya)</option>
+              <option value="Silchar">Silchar (Southern Junction · Assam)</option>
+              <option value="Dimapur">Dimapur (Transit Hub · Nagaland)</option>
+              <option value="Kohima">Kohima (Highland Station · Nagaland)</option>
+              <option value="Imphal">Imphal (Eastern Depot · Manipur)</option>
+              <option value="Aizawl">Aizawl (Mizoram Terminal)</option>
+              <option value="Agartala">Agartala (Tripura Hub)</option>
+              <option value="Itanagar">Itanagar (Arunachal Terminal)</option>
+              <option value="Siliguri">Siliguri (Gateway Corridor)</option>
+              <option value="Gangtok">Gangtok (Sikkim Terminal)</option>
             </select>
           </div>
+
           <div>
-            <label className="block text-[10px] text-[#7d9099] mb-1">Destination City</label>
+            <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">Target Destination</label>
             <select
-              className="w-full bg-[#0d1a20] border border-[#20323b] p-2 rounded text-xs text-[#e9f0f2]"
+              className="w-full bg-[#0d1a20] border border-[#20323b] p-2 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
             >
-              <option value="Imphal">Imphal (Eastern Depot)</option>
-              <option value="Aizawl">Aizawl (Civil Hospital)</option>
-              <option value="Kohima">Kohima (Naga Hospital)</option>
-              <option value="Gangtok">Gangtok (STNM Hospital)</option>
+              <option value="Imphal">RIMS Imphal (Manipur)</option>
+              <option value="Aizawl">Aizawl Civil Hospital (Mizoram)</option>
+              <option value="Kohima">Naga Hospital Kohima (Nagaland)</option>
+              <option value="Gangtok">STNM Hospital Gangtok (Sikkim)</option>
+              <option value="Shillong">NEIGRIHMS Shillong (Meghalaya)</option>
+              <option value="Guwahati">GMCH Guwahati (Assam)</option>
+              <option value="Agartala">AGMC Agartala (Tripura)</option>
+              <option value="Itanagar">TRIHMS Naharlagun (Arunachal)</option>
             </select>
           </div>
+
+          <div>
+            <label className="block text-[10px] text-[#7d9099] mb-1 font-semibold">Cargo Sensitivity</label>
+            <select
+              className="w-full bg-[#0d1a20] border border-[#20323b] p-2 rounded text-xs text-[#e9f0f2] outline-none cursor-pointer"
+              value={cargo}
+              onChange={(e) => setCargo(e.target.value)}
+            >
+              <option value="Emergency Medicines">Emergency Medicines & Blood</option>
+              <option value="Oxygen Cylinders">Oxygen Cylinders</option>
+              <option value="Vaccines (Cold-chain)">Vaccines (Cold-chain)</option>
+              <option value="Food Grains (FCI Supply)">Food Grains (FCI Supply)</option>
+              <option value="Fuel & Diesel Drums">High-Altitude Diesel Fuel</option>
+              <option value="General Cargo">General Cargo</option>
+            </select>
+          </div>
+
           <div className="flex items-end">
             <button
               type="button"
-              className="primary-button w-full h-[36px]"
+              disabled={loading}
+              className="primary-button w-full h-[36px] cursor-pointer"
               onClick={handleOptimize}
             >
-              <Zap size={14} /> [ OPTIMIZE ROUTE ]
+              <Zap size={14} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'COMPUTING...' : '[ OPTIMIZE ROUTE ]'}
             </button>
           </div>
         </div>
@@ -1949,35 +2270,71 @@ function RoutesView({
             {candidates.map((c) => (
               <div
                 key={c.id}
-                className={`p-3 rounded-lg border ${
+                className={`p-3.5 rounded-xl border ${
                   c.isRecommended
-                    ? 'bg-[#152a31] border-[#35c2d4]'
+                    ? 'bg-[#152a31] border-[#35c2d4] shadow-md shadow-[#35c2d4]/10'
                     : c.accessibility === 'blocked'
                     ? 'bg-[#251b20] border-[#e76561]/50'
                     : 'bg-[#0d1a20] border-[#20323b]'
-                } space-y-2 text-xs`}
+                } space-y-2.5 text-xs`}
               >
                 <div className="flex justify-between items-start">
-                  <b className="text-[#e9f0f2]">{c.name}</b>
+                  <b className="text-[#e9f0f2] text-sm">{c.name}</b>
                   {c.isRecommended && (
-                    <span className="px-1.5 py-0.5 bg-[#35c2d4] text-[#071014] rounded text-[9px] font-bold">
-                      SAFEST
+                    <span className="px-2 py-0.5 bg-[#35c2d4] text-[#071014] rounded text-[10px] font-bold tracking-wider">
+                      RECOMMENDED
                     </span>
                   )}
                 </div>
-                <div className="text-[10px] text-[#cad6da] space-y-1">
-                  <div>Distance: <b className="font-mono">{c.distance} km</b></div>
-                  <div>ETA: <b className="font-mono">{Math.floor(c.estimatedTime / 60)}h {Math.round(c.estimatedTime % 60)}m</b></div>
-                  <div>AI Risk: <b className={c.riskLevel === 'low' ? 'text-[#55d29d]' : 'text-[#e76561]'}>{c.riskLevel.toUpperCase()} ({100 - c.score}%)</b></div>
-                </div>
-                <p className="text-[9px] text-[#7d9099] border-t border-[#20323b] pt-1.5">
-                  {c.reason}
-                </p>
-                {c.riskReduction ? (
-                  <div className="text-[9px] font-mono text-[#55d29d] font-bold">
-                    Risk Reduction: {c.riskReduction}%
+
+                <div className="grid grid-cols-3 gap-1.5 p-2 rounded bg-[#081116] border border-[#1b2b33] text-center font-mono">
+                  <div>
+                    <span className="text-[9px] text-[#7d9099] block">Distance</span>
+                    <b className="text-[#e9f0f2] text-xs">{c.distance} km</b>
                   </div>
-                ) : null}
+                  <div>
+                    <span className="text-[9px] text-[#7d9099] block">ETA</span>
+                    <b className="text-[#35c2d4] text-xs">{Math.floor(c.estimatedTime / 60)}h {Math.round(c.estimatedTime % 60)}m</b>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-[#7d9099] block">AI Risk</span>
+                    <b className={`text-xs ${c.riskLevel === 'low' ? 'text-[#55d29d]' : c.riskLevel === 'critical' ? 'text-[#e76561]' : 'text-[#e9ad4b]'}`}>
+                      {c.riskScore ?? 30}/100
+                    </b>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-[#cad6da] space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-[#7d9099]">Traffic Level:</span>
+                    <span className="capitalize">{c.trafficLevel} {c.trafficDelayMin ? `(+${c.trafficDelayMin}m)` : ''}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#7d9099]">Active Incidents:</span>
+                    <span className={c.activeIncidentsCount && c.activeIncidentsCount > 0 ? 'text-[#e76561] font-bold' : 'text-[#55d29d]'}>
+                      {c.activeIncidentsCount ?? 0} active
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2 rounded bg-[#0a141a] border border-[#1b2b33] text-[10px] text-[#8e9fa6] leading-relaxed">
+                  <b className="text-[#35c2d4] block mb-0.5">WHY THIS ROUTE?</b>
+                  {c.reason}
+                </div>
+
+                {c.segments && c.segments.length > 0 && (
+                  <div className="space-y-1 pt-1 border-t border-[#1b2b33]">
+                    <span className="text-[9px] text-[#7d9099] uppercase font-bold block">Corridor Segments ({c.segments.length}):</span>
+                    <div className="space-y-1 max-h-28 overflow-y-auto font-mono text-[9px]">
+                      {c.segments.map((seg, sIdx) => (
+                        <div key={sIdx} className="flex justify-between p-1 rounded bg-[#091116] border border-[#17252c]">
+                          <span>{seg.name} ({seg.fromDistrict}➔{seg.toDistrict})</span>
+                          <span className={seg.status === 'blocked' ? 'text-[#e76561] font-bold' : 'text-[#55d29d]'}>{seg.distanceKm} km · {seg.status.toUpperCase()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2029,28 +2386,59 @@ function RoutesView({
 
 function IncidentsView({
   incidents,
+  nearbyIncidents,
+  selectedLocationName,
   onIncident,
   onNewIncident,
 }: {
   incidents: Incident[]
+  nearbyIncidents: Incident[]
+  selectedLocationName: string
   onIncident: (i: Incident) => void
   onNewIncident: () => void
 }) {
+  const [filterMode, setFilterMode] = useState<'all' | 'nearby'>('all')
+  const displayList = filterMode === 'nearby' ? nearbyIncidents : incidents
+
   return (
-    <div className="module-view">
+    <div className="module-view space-y-4">
       <div className="module-hero">
         <div>
           <div className="eyebrow">DISRUPTION & INCIDENT INTELLIGENCE</div>
-          <h1>Current Verified Incidents ({incidents.length})</h1>
+          <h1>Current Verified Incidents ({displayList.length})</h1>
           <p>Multi-source verified incident ingestion from Field Officers, Meteorological Sensors, and Disaster Feeds.</p>
         </div>
-        <button
-          type="button"
-          className="primary-button"
-          onClick={onNewIncident}
-        >
-          <FileWarning size={15} /> Report New Incident
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Geo-Filter Mode Toggle */}
+          <div className="flex items-center bg-[#101c23] border border-[#20323b] rounded-lg p-1 text-xs">
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                filterMode === 'all' ? 'bg-[#35c2d4] text-[#071014]' : 'text-[#7d9099]'
+              }`}
+              onClick={() => setFilterMode('all')}
+            >
+              All Regional Incidents ({incidents.length})
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                filterMode === 'nearby' ? 'bg-[#55d29d] text-[#071014]' : 'text-[#7d9099]'
+              }`}
+              onClick={() => setFilterMode('nearby')}
+            >
+              Nearby {selectedLocationName} ({nearbyIncidents.length})
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={onNewIncident}
+          >
+            <FileWarning size={15} /> Report New Incident
+          </button>
+        </div>
       </div>
 
       {incidents.length === 0 ? (

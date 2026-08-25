@@ -30,6 +30,7 @@ from backend.app.routers import (
     routes,
     simulation,
     copilot,
+    map,
 )
 
 async def vehicle_telemetry_background_loop():
@@ -125,6 +126,7 @@ app.include_router(risk.router, prefix=settings.API_PREFIX)
 app.include_router(routes.router, prefix=settings.API_PREFIX)
 app.include_router(simulation.router, prefix=settings.API_PREFIX)
 app.include_router(copilot.router, prefix=settings.API_PREFIX)
+app.include_router(map.router, prefix=settings.API_PREFIX)
 
 # WebSocket Endpoints
 @app.websocket("/ws/vehicles")
