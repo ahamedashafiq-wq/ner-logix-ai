@@ -776,6 +776,8 @@ export default function NerLogixApp() {
               emergency={emergency}
               primaryBlocked={primaryBlocked}
               dynamicCandidates={dynamicCandidates}
+              activeVehicle={activeVehicle}
+              activeLocationWeather={activeLocationWeather}
               onVehicle={setSelectedVehicle}
               onIncident={setSelectedIncident}
               onRoadSelect={setSelectedRoad}
@@ -1515,6 +1517,8 @@ function DashboardView({
   emergency,
   primaryBlocked,
   dynamicCandidates,
+  activeVehicle,
+  activeLocationWeather,
   onVehicle,
   onIncident,
   onRoadSelect,
@@ -1538,6 +1542,8 @@ function DashboardView({
   emergency: boolean
   primaryBlocked: boolean
   dynamicCandidates?: RouteCandidate[]
+  activeVehicle?: Vehicle
+  activeLocationWeather?: any
   onVehicle: (v: Vehicle) => void
   onIncident: (i: Incident) => void
   onRoadSelect: (r: Road) => void
@@ -1546,6 +1552,10 @@ function DashboardView({
   onMedicineDemo: () => void
   onNav: (tab: string) => void
 }) {
+  const currentInc = incidents.find((i) => i.severity === 'critical' && i.status !== 'resolved') || incidents[0] || null
+  const bestRoute = dynamicCandidates?.find((c) => c.isRecommended) || dynamicCandidates?.[1] || dynamicCandidates?.[0] || null
+  const activeRisk = bestRoute ? (bestRoute.riskScore ?? (100 - bestRoute.score)) : 34
+
   const deliveryTrend = [
     { day: 'Mon', delivered: 920, delayed: 32 },
     { day: 'Tue', delivered: 1080, delayed: 27 },
@@ -1565,27 +1575,36 @@ function DashboardView({
     { time: '21:00', risk: 39 },
   ]
 
-  const stateData = [
-    { state: 'Assam', incidents: 8 },
-    { state: 'Manipur', incidents: 6 },
-    { state: 'Meghalaya', incidents: 4 },
-    { state: 'Nagaland', incidents: 3 },
-    { state: 'Mizoram', incidents: 2 },
-    { state: 'Sikkim', incidents: 3 },
+  const coreKpis = [
+    { label: 'DISTRICTS', value: '8', trend: 'All States Monitored', icon: 'districts' },
+    { label: 'VEHICLES', value: '42', trend: `${vehicles.filter(v => v.status === 'on_route').length || 18} on route`, icon: 'vehicles' },
+    { label: 'INCIDENTS', value: `${incidents.filter(i => i.status !== 'resolved').length || 6}`, trend: 'Multi-source verified', icon: 'incidents' },
+    { label: 'BLOCKED ROADS', value: `${roads.filter(r => r.status === 'blocked').length || 4}`, trend: 'Detour active', icon: 'blocked' },
+    { label: 'HIGH RISK', value: `${roads.filter(r => r.riskLevel === 'high' || r.riskLevel === 'critical').length + 6}`, trend: 'Pre-positioned buffer', icon: 'risk' },
   ]
 
   return (
     <>
-      {/* 8 Regional KPIs */}
-      <div className="kpi-grid">
-        {kpis.map((item) => (
-          <KpiCard item={item} key={item.label} />
+      {/* 5 Core Regional KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+        {coreKpis.map((item) => (
+          <div key={item.label} className="p-3 bg-[#111f26] border border-[#20323b] rounded-xl flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-[#7d9099] uppercase font-bold tracking-wider block">{item.label}</span>
+              <b className="text-xl font-mono text-[#e9f0f2]">{item.value}</b>
+              <span className="text-[9px] text-[#35c2d4] block font-mono">{item.trend}</span>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-[#182830] border border-[#20323b] flex items-center justify-center text-[#35c2d4]">
+              <Activity size={16} />
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Main Grid: GIS Map & Alert Center */}
-      <div className="dashboard-grid">
-        <section>
+      {/* Main Grid: 70% GIS Map & 30% Intelligence Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        {/* Left Area (70%): Live GIS Map */}
+        <section className="lg:col-span-8 space-y-3">
           <SectionHeading
             eyebrow="REGIONAL GIS INTELLIGENCE"
             title="Live Operational Corridor Map"
@@ -1621,105 +1640,193 @@ function DashboardView({
           />
         </section>
 
-        {/* Right Rail: Alert Center & Quick Actions */}
-        <aside className="right-rail">
-          <SectionHeading
-            eyebrow="REQUIRES IMMEDIATE ACTION"
-            title="Alert Center"
-            action={
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => onNav('Incidents')}
-              >
-                View all ({alerts.length})
-              </button>
-            }
-          />
-          <div className="alert-list">
-            {alerts.slice(0, 4).map((alert) => (
-              <div className="alert-row" key={alert.id}>
-                <div className={`alert-symbol ${alert.severity}`}>
-                  <AlertTriangle size={15} />
-                </div>
-                <div className="alert-copy">
-                  <b>{alert.message}</b>
-                  <span>{alert.timestamp} · {alert.location ?? 'Corridor'}</span>
+        {/* Right Rail (30%): Intelligence Panel */}
+        <aside className="lg:col-span-4 space-y-3">
+          {/* Card 1: CURRENT INCIDENT */}
+          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#e76561] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <AlertTriangle size={13} /> CURRENT INCIDENT
+              </span>
+              {currentInc ? (
+                <StatusPill tone={currentInc.severity === 'critical' ? 'red' : 'amber'}>
+                  {currentInc.severity.toUpperCase()}
+                </StatusPill>
+              ) : (
+                <span className="text-[9px] text-[#55d29d] font-mono font-bold">✓ NO VERIFIED INCIDENTS</span>
+              )}
+            </div>
+
+            {currentInc ? (
+              <div className="space-y-1.5 text-xs">
+                <b className="text-[#e9f0f2] block">{currentInc.location}</b>
+                <p className="text-[10px] text-[#8e9fa6] leading-snug">{currentInc.description}</p>
+                <div className="flex items-center justify-between text-[9px] text-[#7d9099] pt-1 border-t border-[#1b2b33]">
+                  <span>Corridor: <b className="text-[#cad6da]">{currentInc.affectedRoads?.join(', ') || 'NH-14'}</b></span>
+                  <span>Confidence: <b className="text-[#55d29d]">{currentInc.confidence}%</b></span>
                 </div>
               </div>
-            ))}
+            ) : (
+              <p className="text-[10px] text-[#7d9099]">
+                All monitored corridors operational without blockage.
+              </p>
+            )}
           </div>
 
-          <div className="quick-actions">
-            <div className="eyebrow">COMMAND SHORTCUTS</div>
-            <div className="quick-grid">
-              <button type="button" onClick={onMedicineDemo}>
-                <Zap size={17} />
-                <span>Medicine Emergency</span>
-              </button>
-              <button type="button" onClick={onRunSimulation}>
-                <CloudRain size={17} />
-                <span>Disaster Sim</span>
-              </button>
-              <button type="button" onClick={() => onNav('Routes')}>
-                <RouteIcon size={17} />
-                <span>Optimize Route</span>
-              </button>
-              <button type="button" onClick={() => onNav('Field Reports')}>
-                <Crosshair size={17} />
-                <span>Field Report</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Live Realtime Event Stream */}
-          <div className="mt-4 p-3 bg-[#0d1a20] border border-[#20323b] rounded-xl space-y-2">
+          {/* Card 2: AI RISK ENGINE */}
+          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <Radio size={12} className="text-[#35c2d4] animate-pulse" /> LIVE EVENT STREAM
+                <BrainCircuit size={13} /> AI DISRUPTION RISK
               </span>
-              <span className="text-[9px] text-[#55d29d] font-mono">WEBSOCKET: ACTIVE</span>
+              <span className={`text-xs font-mono font-bold ${activeRisk >= 75 ? 'text-[#e76561]' : activeRisk >= 50 ? 'text-[#e9ad4b]' : 'text-[#55d29d]'}`}>
+                {activeRisk}/100 ({activeRisk >= 75 ? 'CRITICAL' : activeRisk >= 50 ? 'ELEVATED' : 'NOMINAL'})
+              </span>
             </div>
-            <div className="space-y-1.5 max-h-44 overflow-y-auto text-[11px] font-mono text-[#cad6da]">
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:04</span>
-                <div>
-                  <b className="text-[#e76561]">INCIDENT:</b> NH-14 Tamenglong Landslide
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:06</span>
-                <div>
-                  <b className="text-[#e9ad4b]">AI RISK:</b> Escalated to 94% (Critical)
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:07</span>
-                <div>
-                  <b className="text-[#e76561]">ROAD STATUS:</b> NH-14 Marked BLOCKED
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:09</span>
-                <div>
-                  <b className="text-[#55d29d]">ROUTE:</b> Route B Bypass Selected (+38km)
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:11</span>
-                <div>
-                  <b className="text-[#35c2d4]">VEHICLE:</b> NER-MED-204 Rerouted (ETA 5h 54m)
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-1.5 rounded bg-[#101d23] border border-[#1b2b33]">
-                <span className="text-[#35c2d4] text-[10px]">16:21:14</span>
-                <div>
-                  <b className="text-[#55d29d]">ALERT:</b> Aizawl Hospital Supply Protected
-                </div>
-              </div>
+
+            <div className="h-1.5 bg-[#1b2b33] rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${activeRisk >= 75 ? 'bg-[#e76561]' : activeRisk >= 50 ? 'bg-[#e9ad4b]' : 'bg-[#55d29d]'}`}
+                style={{ width: `${Math.min(100, activeRisk)}%` }}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-1 text-[9px] font-mono text-[#8e9fa6] pt-1">
+              <div>Rainfall: <b className="text-[#cad6da]">{activeLocationWeather?.rainfallMm ?? 42}mm</b></div>
+              <div>Slope: <b className="text-[#cad6da]">{activeRisk >= 70 ? 'High' : 'Moderate'}</b></div>
+              <div>Bridges: <b className="text-[#55d29d]">Verified</b></div>
             </div>
           </div>
+
+          {/* Card 3: BEST ROUTE RECOMMENDATION */}
+          <div className="p-3.5 bg-[#152a31] border border-[#35c2d4]/60 rounded-xl space-y-2 shadow-md shadow-[#35c2d4]/10">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <RouteIcon size={13} /> BEST ROUTE
+              </span>
+              <span className="px-1.5 py-0.5 bg-[#35c2d4] text-[#071014] rounded text-[9px] font-bold">
+                RECOMMENDED
+              </span>
+            </div>
+
+            {bestRoute ? (
+              <div className="space-y-1.5 text-xs">
+                <b className="text-[#e9f0f2] block text-xs">{bestRoute.name}</b>
+                <div className="grid grid-cols-3 gap-1 p-1.5 rounded bg-[#0b161c] border border-[#1b2b33] text-center font-mono text-[10px]">
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">Distance</span>
+                    <b className="text-[#e9f0f2]">{bestRoute.distance} km</b>
+                  </div>
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">ETA</span>
+                    <b className="text-[#35c2d4]">{Math.floor(bestRoute.estimatedTime / 60)}h {Math.round(bestRoute.estimatedTime % 60)}m</b>
+                  </div>
+                  <div>
+                    <span className="text-[8px] text-[#7d9099] block">Risk Red.</span>
+                    <b className="text-[#55d29d]">-{bestRoute.riskReduction ?? 68}%</b>
+                  </div>
+                </div>
+                <p className="text-[9px] text-[#8e9fa6] leading-tight">
+                  {bestRoute.reason}
+                </p>
+              </div>
+            ) : (
+              <p className="text-[10px] text-[#7d9099]">Evaluating optimal multi-criteria route corridors...</p>
+            )}
+          </div>
+
+          {/* Card 4: ACTIVE VEHICLE */}
+          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#55d29d] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Truck size={13} /> ACTIVE VEHICLE
+              </span>
+              <StatusPill tone={activeVehicle?.status === 'delayed' ? 'amber' : 'green'}>
+                {activeVehicle?.status ? activeVehicle.status.toUpperCase() : 'ON ROUTE'}
+              </StatusPill>
+            </div>
+
+            {activeVehicle ? (
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between items-baseline">
+                  <b className="text-[#e9f0f2] font-mono text-sm">{activeVehicle.vehicleNumber}</b>
+                  <span className="text-[10px] text-[#7d9099]">{activeVehicle.driverName}</span>
+                </div>
+
+                <div className="text-[10px] text-[#cad6da] space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-[#7d9099]">Route:</span>
+                    <span>{activeVehicle.origin} ➔ {activeVehicle.destination}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#7d9099]">Cargo:</span>
+                    <span className="text-[#35c2d4] font-medium">{activeVehicle.cargo || 'Emergency Medicines'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#7d9099]">GPS:</span>
+                    <span className="font-mono">{activeVehicle.currentLocation.lat.toFixed(3)}°N, {activeVehicle.currentLocation.lng.toFixed(3)}°E</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[9px] text-[#7d9099] mb-1 font-mono">
+                    <span>Transit Progress</span>
+                    <span>{activeVehicle.deliveryPercentage ?? 64}%</span>
+                  </div>
+                  <div className="h-1 bg-[#1b2b33] rounded overflow-hidden">
+                    <div className="h-full bg-[#35c2d4]" style={{ width: `${activeVehicle.deliveryPercentage ?? 64}%` }} />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </aside>
+      </div>
+
+      {/* Bottom Area: Latest 4 Live Events Stream */}
+      <div className="mt-4 p-3.5 bg-[#0d1a20] border border-[#20323b] rounded-xl space-y-2 shadow-md">
+        <div className="flex items-center justify-between border-b border-[#1b2b33] pb-2">
+          <span className="text-[11px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-2">
+            <Radio size={14} className="text-[#35c2d4] animate-pulse" /> LIVE EVENT STREAM
+          </span>
+          <span className="text-[10px] text-[#55d29d] font-mono flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#55d29d] animate-ping" /> WEBSOCKET: CONNECTED
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] font-mono">
+          <div className="p-2 rounded bg-[#101d23] border border-[#1b2b33] space-y-0.5">
+            <div className="flex justify-between text-[9px]">
+              <span className="text-[#35c2d4]">16:21:04</span>
+              <span className="text-[#e76561] font-bold">INCIDENT</span>
+            </div>
+            <div className="text-[#e9f0f2] truncate">NH-14 Landslide at Tamenglong Pass</div>
+          </div>
+
+          <div className="p-2 rounded bg-[#101d23] border border-[#1b2b33] space-y-0.5">
+            <div className="flex justify-between text-[9px]">
+              <span className="text-[#35c2d4]">16:21:07</span>
+              <span className="text-[#e9ad4b] font-bold">ROAD STATUS</span>
+            </div>
+            <div className="text-[#e9f0f2] truncate">NH-14 Marked BLOCKED</div>
+          </div>
+
+          <div className="p-2 rounded bg-[#101d23] border border-[#1b2b33] space-y-0.5">
+            <div className="flex justify-between text-[9px]">
+              <span className="text-[#35c2d4]">16:21:09</span>
+              <span className="text-[#55d29d] font-bold">ROUTE REROUTE</span>
+            </div>
+            <div className="text-[#e9f0f2] truncate">Route 2 Safe Bypass Dispatched</div>
+          </div>
+
+          <div className="p-2 rounded bg-[#101d23] border border-[#1b2b33] space-y-0.5">
+            <div className="flex justify-between text-[9px]">
+              <span className="text-[#35c2d4]">16:21:14</span>
+              <span className="text-[#55d29d] font-bold">SUPPLY PROTECTED</span>
+            </div>
+            <div className="text-[#e9f0f2] truncate">Aizawl Hospital Supply Preserved</div>
+          </div>
+        </div>
       </div>
 
       {/* Live Location-Aware Route Comparison Strip */}
