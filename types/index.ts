@@ -39,6 +39,7 @@ export interface District {
   lng: number
   accessibilityScore?: number
   connectivityScore?: number
+  isolationRisk?: number
   connectivityStatus?: 'GOOD' | 'MODERATE' | 'HIGH RISK' | 'CRITICAL'
   roadStatus?: 'open' | 'slow' | 'restricted' | 'blocked'
   weatherRisk?: RiskLevel
@@ -295,6 +296,10 @@ export interface Hospital {
   lat: number
   lng: number
   isDemo: boolean
+  district?: string
+  oxygenRemainingDays?: number
+  bloodBedsRemaining?: number
+  bedsAvailable?: number
 }
 
 export interface Supply {

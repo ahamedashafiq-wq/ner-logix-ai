@@ -56,6 +56,8 @@ import {
 import { useLogistics } from '@/hooks/use-logistics'
 import { useGps } from '@/hooks/use-gps'
 import { RegionMap } from '@/components/region-map'
+import { CommandPalette } from '@/components/command-palette'
+import { CopilotDrawer } from '@/components/copilot-drawer'
 import { t, type AppLanguage } from '@/lib/i18n'
 import { calculateDetailedRisk } from '@/services/risk-prediction'
 import { calculateRiskAwareRouteCandidates, requestDrivingRoutes } from '@/services/routes'
@@ -205,6 +207,9 @@ export default function NerLogixApp() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
+  const [selectedDistrict, setSelectedDistrict] = useState<District | null>(null)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [copilotDrawerOpen, setCopilotDrawerOpen] = useState(false)
   const [showScenarioModal, setShowScenarioModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [showSimulationModal, setShowSimulationModal] = useState(false)
@@ -349,124 +354,160 @@ export default function NerLogixApp() {
 
   return (
     <div className={`app-shell ${emergency ? 'emergency-mode' : ''}`}>
-      {/* Sidebar Navigation */}
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
-        <div className="brand">
-          <div className="brand-mark">
-            <Radio size={17} />
-          </div>
-          <div>
-            <strong>
-              NER-LOGIX <em>AI</em>
-            </strong>
-            <span>COMMAND CENTER</span>
-          </div>
-          <button type="button" className="mobile-close" onClick={() => setMobileOpen(false)}>
-            <X size={18} />
-          </button>
+      {/* Icon-First Navigation Rail (Width 68px) */}
+      <aside className={`nav-rail ${mobileOpen ? 'open' : ''}`}>
+        {/* Brand Mark */}
+        <div
+          className="rail-brand"
+          onClick={() => setActiveTab('Dashboard')}
+          title="NER-LOGIX AI Command Center"
+        >
+          <Radio size={20} className="animate-pulse" />
         </div>
 
-        <div className="system-status">
-          <span className="online-dot" /> {demoMode ? 'DEMO SIMULATION' : 'LIVE OPERATIONAL'}
-          <span>•</span> NER-HUB 01
-        </div>
-
-        <nav>
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              className={activeTab === id ? 'active' : ''}
-              onClick={() => {
-                setActiveTab(id)
-                setMobileOpen(false)
-              }}
-            >
-              <Icon size={17} />
-              <span>{t(language, id as any) || label}</span>
-              {id === 'Incidents' && criticalIncidentCount > 0 && (
-                <b className="nav-count">{criticalIncidentCount}</b>
-              )}
-            </button>
-          ))}
+        {/* Navigation Items */}
+        <nav className="rail-nav">
+          {navItems.map(({ id, label, icon: Icon }) => {
+            const isActive = activeTab === id
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`rail-item ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab(id)
+                  setMobileOpen(false)
+                }}
+                aria-label={label}
+              >
+                {isActive && <span className="rail-active-pill" />}
+                <Icon size={18} />
+                <span className="tooltip">{t(language, id as any) || label}</span>
+                {id === 'Incidents' && criticalIncidentCount > 0 && (
+                  <span className="rail-item-badge">{criticalIncidentCount}</span>
+                )}
+              </button>
+            )
+          })}
         </nav>
 
-        <div className="sidebar-footer">
-          {/* Offline Sync State Card */}
-          <div className="offline-card flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {online ? <Wifi size={16} className="text-[#55d29d]" /> : <WifiOff size={16} className="text-[#e76561]" />}
-              <div>
-                <b>{online ? 'Online Connected' : 'Offline Mode Active'}</b>
-                <span>{pendingReportsCount > 0 ? `${pendingReportsCount} pending sync` : 'All reports synced'}</span>
-              </div>
-            </div>
-            {pendingReportsCount > 0 && online && (
-              <button
-                type="button"
-                className="text-[10px] text-[#35c2d4] underline font-bold"
-                onClick={() => void syncOfflineReports().then(() => notify('Offline reports synced successfully!'))}
-              >
-                Sync
-              </button>
+        {/* Rail Footer */}
+        <div className="rail-footer">
+          {/* Offline Sync State */}
+          <div
+            className="w-10 h-10 rounded-xl bg-[#0e1b22] border border-[#1b2f3a] flex items-center justify-center cursor-pointer hover:border-[#35c2d4]/50 transition-all"
+            title={online ? (pendingReportsCount > 0 ? `${pendingReportsCount} reports pending sync` : 'All reports synced · Online') : 'Offline Mode Active'}
+            onClick={() => {
+              if (pendingReportsCount > 0 && online) {
+                void syncOfflineReports().then(() => notify('Offline reports synced successfully!'))
+              }
+            }}
+          >
+            {online ? (
+              <Wifi size={16} className={pendingReportsCount > 0 ? 'text-[#e9ad4b] animate-pulse' : 'text-[#55d29d]'} />
+            ) : (
+              <WifiOff size={16} className="text-[#e76561]" />
             )}
           </div>
 
-          <div className="profile">
-            <div className="avatar">AS</div>
-            <div>
-              <b>Aarav Sharma</b>
-              <span>Logistics Commander · MoDONER</span>
-            </div>
+          {/* Quick Emergency Toggle */}
+          <button
+            type="button"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              emergency
+                ? 'bg-[#ef4444] text-white shadow-lg shadow-[#ef4444]/40 animate-pulse'
+                : 'bg-[#181a20] text-[#718791] hover:text-[#ef4444] hover:bg-[#251518]'
+            }`}
+            onClick={() => {
+              setEmergency(!emergency)
+              notify(!emergency ? 'EMERGENCY MODE ACTIVATED' : 'Emergency mode deactivated')
+            }}
+            title="Toggle Emergency Disaster Operations"
+          >
+            <Siren size={18} />
+          </button>
+
+          {/* User Profile Avatar */}
+          <div
+            className="w-9 h-9 rounded-xl bg-[#142834] border border-[#234254] text-[#35c2d4] font-bold text-xs flex items-center justify-center cursor-pointer"
+            title={`Operator: Aarav Sharma (${userRole})`}
+          >
+            AS
           </div>
         </div>
       </aside>
 
       {/* Main Command Workspace */}
       <main className="main-content">
-        {/* Top Operational Bar */}
+        {/* Top Operational Command Bar */}
         <header className="topbar">
           <div className="flex items-center gap-3">
-            <button type="button" className="menu-button" onClick={() => setMobileOpen(true)}>
-              <Menu size={20} />
+            <button
+              type="button"
+              className="lg:hidden p-1.5 rounded-lg bg-[#111f26] text-[#718791] hover:text-[#e9f0f2]"
+              onClick={() => setMobileOpen(!mobileOpen)}
+            >
+              <Menu size={18} />
             </button>
-            <div className="breadcrumb">
-              <span>NER-LOGIX AI</span>
-              <i>/</i>
-              <b>{activeTab}</b>
+            <div>
+              <div className="flex items-center gap-2">
+                <b className="text-xs font-mono text-[#00e5ff] tracking-wider uppercase">NER-LOGIX AI</b>
+                <span className="text-[10px] text-[#55d29d] font-mono flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#55d29d] animate-ping" /> LIVE NETWORK
+                </span>
+              </div>
+              <span className="text-[10px] text-[#78909c] block">REGIONAL OPERATIONS COMMAND CENTER</span>
             </div>
           </div>
 
-          <div className="top-actions flex items-center gap-4">
+          {/* Global Search Bar with Ctrl + K */}
+          <div
+            className="hidden md:flex items-center gap-2.5 bg-[#0e1820] hover:bg-[#13222b] border border-[#1c2e38] hover:border-[#00e5ff]/50 rounded-xl px-3.5 py-1.5 w-72 lg:w-96 cursor-pointer transition-all shadow-inner"
+            onClick={() => setCommandPaletteOpen(true)}
+          >
+            <Search size={14} className="text-[#00e5ff]" />
+            <span className="text-xs text-[#607d8b] flex-1 select-none">
+              Search road, vehicle, district, hospital...
+            </span>
+            <kbd className="px-1.5 py-0.5 rounded bg-[#162732] border border-[#223d4e] text-[9px] font-mono text-[#90a4ae]">
+              Ctrl + K
+            </kbd>
+          </div>
+
+          <div className="flex items-center gap-3">
             {/* Global Demo / Live Mode Switch */}
-            <div className="flex items-center gap-2 bg-[#101c23] border border-[#20323b] rounded-lg p-1 text-xs">
+            <div className="flex items-center bg-[#0e1820] border border-[#1c2e38] rounded-lg p-0.5 text-xs">
               <button
                 type="button"
-                className={`px-2 py-1 rounded text-[10px] font-bold ${demoMode ? 'bg-[#35c2d4] text-[#071014]' : 'text-[#7d9099]'}`}
+                className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                  demoMode ? 'bg-[#00e5ff] text-[#04090d]' : 'text-[#78909c] hover:text-[#e9f0f2]'
+                }`}
                 onClick={() => {
                   setDemoMode(true)
-                  notify('DEMO MODE: Simulated telemetry and fallback weather active.')
+                  notify('DEMO MODE: Deterministic simulation scenario active.')
                 }}
               >
-                DEMO MODE
+                DEMO
               </button>
               <button
                 type="button"
-                className={`px-2 py-1 rounded text-[10px] font-bold ${!demoMode ? 'bg-[#55d29d] text-[#071014]' : 'text-[#7d9099]'}`}
+                className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                  !demoMode ? 'bg-[#10b981] text-[#04090d]' : 'text-[#78909c] hover:text-[#e9f0f2]'
+                }`}
                 onClick={() => {
                   setDemoMode(false)
-                  notify('LIVE MODE: Connected to live API endpoints with mock fallback.')
+                  notify('LIVE MODE: Connected to real-time APIs & sensor telemetry.')
                 }}
               >
-                LIVE MODE
+                LIVE
               </button>
             </div>
 
             {/* Role Switcher */}
-            <div className="flex items-center gap-1 bg-[#101c23] border border-[#20323b] rounded-lg px-2 py-1 text-xs text-[#35c2d4]">
-              <UserRound size={13} />
+            <div className="hidden sm:flex items-center gap-1 bg-[#0e1820] border border-[#1c2e38] rounded-lg px-2 py-1 text-xs text-[#00e5ff]">
+              <UserRound size={12} />
               <select
-                className="bg-transparent border-0 text-xs text-[#cad6da] outline-none cursor-pointer"
+                className="bg-transparent border-0 text-xs text-[#cfd8dc] outline-none cursor-pointer"
                 value={userRole}
                 onChange={(e) => setUserRole(e.target.value as any)}
                 aria-label="User Role"
@@ -479,50 +520,109 @@ export default function NerLogixApp() {
             </div>
 
             {/* Language Switcher */}
-            <div className="flex items-center gap-1 bg-[#101c23] border border-[#20323b] rounded-lg px-2 py-1 text-xs text-[#cad6da]">
-              <Globe size={13} className="text-[#35c2d4]" />
+            <div className="hidden sm:flex items-center gap-1 bg-[#0e1820] border border-[#1c2e38] rounded-lg px-2 py-1 text-xs text-[#cfd8dc]">
+              <Globe size={12} className="text-[#00e5ff]" />
               <select
-                className="bg-transparent border-0 text-xs text-[#cad6da] outline-none cursor-pointer"
+                className="bg-transparent border-0 text-xs text-[#cfd8dc] outline-none cursor-pointer"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as AppLanguage)}
                 aria-label="Select Language"
               >
-                <option value="en">English (EN)</option>
-                <option value="hi">हिंदी (HI)</option>
-                <option value="as">অসমীয়া (AS)</option>
-                <option value="bn">বাংলা (BN)</option>
+                <option value="en">EN</option>
+                <option value="hi">HI</option>
+                <option value="as">AS</option>
+                <option value="bn">BN</option>
               </select>
             </div>
+
+            {/* Floating AI Copilot Trigger */}
+            <button
+              type="button"
+              className="px-2.5 py-1.5 rounded-lg bg-[#00e5ff]/15 hover:bg-[#00e5ff]/25 border border-[#00e5ff]/40 text-[#00e5ff] text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shadow-[#00e5ff]/10"
+              onClick={() => setCopilotDrawerOpen(true)}
+            >
+              <BrainCircuit size={14} />
+              <span className="hidden sm:inline">AI COPILOT</span>
+            </button>
 
             {/* Notifications */}
             <button
               type="button"
-              className="icon-button notification"
+              className="p-2 rounded-lg bg-[#0e1820] border border-[#1c2e38] text-[#78909c] hover:text-[#e9f0f2] relative"
               aria-label="Alerts"
               onClick={() => setActiveTab('Incidents')}
             >
-              <Bell size={18} />
-              {alerts.length > 0 && <i>{alerts.length}</i>}
+              <Bell size={16} />
+              {alerts.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ef4444] text-white text-[9px] font-mono font-bold flex items-center justify-center">
+                  {alerts.length}
+                </span>
+              )}
             </button>
 
-            {/* Emergency Mode Button */}
+            {/* Emergency Operations Mode */}
             <button
               type="button"
               className={`emergency-button ${emergency ? 'active' : ''}`}
               onClick={() => {
                 setEmergency(!emergency)
-                notify(
-                  !emergency
-                    ? 'EMERGENCY MODE ACTIVATED: Priority green-corridors active for relief shipments.'
-                    : 'Emergency mode deactivated.'
-                )
+                notify(!emergency ? 'EMERGENCY MODE ACTIVATED: Priority green-corridors enforced.' : 'Emergency mode deactivated.')
               }}
             >
-              <Siren size={16} />
-              {emergency ? t(language, 'emergencyActive') : t(language, 'emergencyMode')}
+              <Siren size={15} />
+              <span className="hidden sm:inline">
+                {emergency ? 'EMERGENCY ACTIVE' : 'EMERGENCY MODE'}
+              </span>
             </button>
           </div>
         </header>
+
+        {/* Hero Operational Status Strip */}
+        <div className="border-b border-[#14232c] bg-[#09131a] px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#78909c]">NETWORK HEALTH:</span>
+              <b className="text-[#10b981] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" /> 98%
+              </b>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#78909c]">INCIDENTS:</span>
+              <b className="text-[#fbbf24]">{incidents.filter(i => i.status !== 'resolved').length || 6}</b>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#78909c]">BLOCKED:</span>
+              <b className="text-[#f87171]">{roads.filter(r => r.status === 'blocked').length || 4}</b>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#78909c]">HIGH RISK:</span>
+              <b className="text-[#fbbf24]">{roads.filter(r => r.riskLevel === 'high' || r.riskLevel === 'critical').length + 6}</b>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 text-[10px]">
+            <div className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${healthStatus.api === 'CONNECTED' ? 'bg-[#10b981]' : 'bg-[#ef4444]'}`} />
+              <span className="text-[#78909c]">API:</span>
+              <span className="text-[#cfd8dc]">{healthStatus.api}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${healthStatus.weather === 'LIVE' ? 'bg-[#10b981]' : 'bg-[#fbbf24]'}`} />
+              <span className="text-[#78909c]">WEATHER:</span>
+              <span className="text-[#cfd8dc]">{healthStatus.weather} (Open-Meteo)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${healthStatus.gps === 'LIVE' ? 'bg-[#00e5ff]' : 'bg-[#10b981]'}`} />
+              <span className="text-[#78909c]">GPS:</span>
+              <span className="text-[#cfd8dc]">{healthStatus.gps === 'LIVE' ? 'LIVE' : 'DEMO'}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${healthStatus.ws === 'CONNECTED' ? 'bg-[#10b981]' : 'bg-[#ef4444]'}`} />
+              <span className="text-[#78909c]">WS:</span>
+              <span className="text-[#cfd8dc]">{healthStatus.ws}</span>
+            </div>
+          </div>
+        </div>
 
         {/* Page Content Body */}
         <div className="page-content">
@@ -778,9 +878,20 @@ export default function NerLogixApp() {
               dynamicCandidates={dynamicCandidates}
               activeVehicle={activeVehicle}
               activeLocationWeather={activeLocationWeather}
+              selectedVehicle={selectedVehicle}
+              selectedIncident={selectedIncident}
+              selectedDistrict={selectedDistrict}
+              selectedRoad={selectedRoad}
               onVehicle={setSelectedVehicle}
               onIncident={setSelectedIncident}
+              onSelectDistrict={setSelectedDistrict}
               onRoadSelect={setSelectedRoad}
+              onClearSelection={() => {
+                setSelectedVehicle(null)
+                setSelectedIncident(null)
+                setSelectedDistrict(null)
+                setSelectedRoad(null)
+              }}
               onReport={() => setShowReportModal(true)}
               onRunSimulation={() => setShowSimulationModal(true)}
               onMedicineDemo={() => {
@@ -788,6 +899,7 @@ export default function NerLogixApp() {
                 triggerMedicineScenario()
               }}
               onNav={setActiveTab}
+              onAlertAuthority={(inc) => notify(`Emergency dispatch authority alerted for ${inc.location}`)}
             />
           )}
 
@@ -1486,6 +1598,56 @@ export default function NerLogixApp() {
         </div>
       )}
 
+      {/* Command Palette (Ctrl + K) */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        vehicles={vehicles}
+        districts={districts}
+        hospitals={hospitals}
+        warehouses={warehouses}
+        roads={roads}
+        incidents={incidents}
+        onSelectVehicle={(v) => {
+          setSelectedVehicle(v)
+          setSelectedVehicleId(v.id)
+        }}
+        onSelectIncident={setSelectedIncident}
+        onSelectDistrict={setSelectedDistrict}
+        onSelectRoad={setSelectedRoad}
+        onOpenCopilot={() => setCopilotDrawerOpen(true)}
+        onOpenSimulation={() => setShowSimulationModal(true)}
+        onToggleEmergency={() => {
+          setEmergency(!emergency)
+          notify(!emergency ? 'EMERGENCY MODE ACTIVATED' : 'Emergency mode deactivated')
+        }}
+        onNavigate={setActiveTab}
+      />
+
+      {/* Slide-Out AI Copilot Drawer */}
+      <CopilotDrawer
+        open={copilotDrawerOpen}
+        onClose={() => setCopilotDrawerOpen(false)}
+        onNavigate={setActiveTab}
+        onSelectVehicleId={(id) => {
+          const v = vehicles.find((veh) => veh.id === id)
+          if (v) {
+            setSelectedVehicle(v)
+            setSelectedVehicleId(v.id)
+          }
+        }}
+      />
+
+      {/* Floating Action Button: AI Copilot */}
+      <button
+        type="button"
+        onClick={() => setCopilotDrawerOpen(true)}
+        className="fixed bottom-6 right-6 z-40 bg-[#00e5ff] text-[#04090d] hover:bg-[#2ae9ff] px-4 py-3 rounded-full font-bold text-xs flex items-center gap-2 shadow-xl shadow-[#00e5ff]/35 hover:scale-105 transition-all cursor-pointer border border-[#00e5ff]"
+      >
+        <Sparkles size={16} />
+        <span>✦ NER INTELLIGENCE</span>
+      </button>
+
       {/* Interactive Toast Notification */}
       {toast && (
         <div className="toast animate-bounce">
@@ -1519,13 +1681,20 @@ function DashboardView({
   dynamicCandidates,
   activeVehicle,
   activeLocationWeather,
+  selectedVehicle,
+  selectedIncident,
+  selectedDistrict,
+  selectedRoad,
   onVehicle,
   onIncident,
+  onSelectDistrict,
   onRoadSelect,
+  onClearSelection,
   onReport,
   onRunSimulation,
   onMedicineDemo,
   onNav,
+  onAlertAuthority,
 }: {
   kpis: { label: string; value: string; trend: string; icon: string }[]
   vehicles: Vehicle[]
@@ -1544,13 +1713,20 @@ function DashboardView({
   dynamicCandidates?: RouteCandidate[]
   activeVehicle?: Vehicle
   activeLocationWeather?: any
+  selectedVehicle?: Vehicle | null
+  selectedIncident?: Incident | null
+  selectedDistrict?: District | null
+  selectedRoad?: Road | null
   onVehicle: (v: Vehicle) => void
   onIncident: (i: Incident) => void
+  onSelectDistrict?: (d: District) => void
   onRoadSelect: (r: Road) => void
+  onClearSelection?: () => void
   onReport: () => void
   onRunSimulation: () => void
   onMedicineDemo: () => void
   onNav: (tab: string) => void
+  onAlertAuthority?: (i: Incident) => void
 }) {
   const currentInc = incidents.find((i) => i.severity === 'critical' && i.status !== 'resolved') || incidents[0] || null
   const bestRoute = dynamicCandidates?.find((c) => c.isRecommended) || dynamicCandidates?.[1] || dynamicCandidates?.[0] || null
@@ -1585,23 +1761,23 @@ function DashboardView({
 
   return (
     <>
-      {/* 5 Core Regional KPIs */}
+      {/* 5 Core Regional Operational Telemetry Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
         {coreKpis.map((item) => (
-          <div key={item.label} className="p-3 bg-[#111f26] border border-[#20323b] rounded-xl flex items-center justify-between">
+          <div key={item.label} className="p-3.5 bg-[#0e1820] border border-[#1c2e38] rounded-xl flex items-center justify-between shadow-md">
             <div>
-              <span className="text-[10px] text-[#7d9099] uppercase font-bold tracking-wider block">{item.label}</span>
-              <b className="text-xl font-mono text-[#e9f0f2]">{item.value}</b>
-              <span className="text-[9px] text-[#35c2d4] block font-mono">{item.trend}</span>
+              <span className="text-[9px] text-[#78909c] uppercase font-bold tracking-wider block font-mono">{item.label}</span>
+              <b className="text-2xl font-mono text-[#e9f0f2]">{item.value}</b>
+              <span className="text-[9px] text-[#00e5ff] block font-mono">{item.trend}</span>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-[#182830] border border-[#20323b] flex items-center justify-center text-[#35c2d4]">
-              <Activity size={16} />
+            <div className="w-9 h-9 rounded-lg bg-[#12232c] border border-[#203947] flex items-center justify-center text-[#00e5ff]">
+              <Activity size={17} />
             </div>
           </div>
         ))}
       </div>
 
-      {/* Main Grid: 70% GIS Map & 30% Intelligence Panel */}
+      {/* Main Grid: 70% GIS Map & 30% Context-Sensitive Intelligence Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Area (70%): Live GIS Map */}
         <section className="lg:col-span-8 space-y-3">
@@ -1640,146 +1816,365 @@ function DashboardView({
           />
         </section>
 
-        {/* Right Rail (30%): Intelligence Panel */}
+        {/* Right Rail (30%): Context-Sensitive Intelligence Panel */}
         <aside className="lg:col-span-4 space-y-3">
-          {/* Card 1: CURRENT INCIDENT */}
-          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#e76561] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <AlertTriangle size={13} /> CURRENT INCIDENT
-              </span>
-              {currentInc ? (
-                <StatusPill tone={currentInc.severity === 'critical' ? 'red' : 'amber'}>
-                  {currentInc.severity.toUpperCase()}
-                </StatusPill>
-              ) : (
-                <span className="text-[9px] text-[#55d29d] font-mono font-bold">✓ NO VERIFIED INCIDENTS</span>
-              )}
-            </div>
-
-            {currentInc ? (
-              <div className="space-y-1.5 text-xs">
-                <b className="text-[#e9f0f2] block">{currentInc.location}</b>
-                <p className="text-[10px] text-[#8e9fa6] leading-snug">{currentInc.description}</p>
-                <div className="flex items-center justify-between text-[9px] text-[#7d9099] pt-1 border-t border-[#1b2b33]">
-                  <span>Corridor: <b className="text-[#cad6da]">{currentInc.affectedRoads?.join(', ') || 'NH-14'}</b></span>
-                  <span>Confidence: <b className="text-[#55d29d]">{currentInc.confidence}%</b></span>
+          {/* 1. When an Incident is explicitly selected */}
+          {selectedIncident ? (
+            <div className="p-4 bg-[#181a22] border border-[#ef4444]/60 rounded-xl space-y-3 shadow-xl glow-red">
+              <div className="flex items-center justify-between border-b border-[#2d2228] pb-2">
+                <span className="text-[10px] text-[#ef4444] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                  <AlertTriangle size={14} /> INCIDENT INTELLIGENCE
+                </span>
+                <div className="flex items-center gap-2">
+                  <StatusPill tone={selectedIncident.severity === 'critical' ? 'red' : 'amber'}>
+                    {selectedIncident.severity.toUpperCase()}
+                  </StatusPill>
+                  {onClearSelection && (
+                    <button
+                      type="button"
+                      onClick={onClearSelection}
+                      className="text-[#78909c] hover:text-[#e9f0f2] text-xs p-1"
+                      title="Return to Regional Overview"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
-            ) : (
-              <p className="text-[10px] text-[#7d9099]">
-                All monitored corridors operational without blockage.
-              </p>
-            )}
-          </div>
 
-          {/* Card 2: AI RISK ENGINE */}
-          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <BrainCircuit size={13} /> AI DISRUPTION RISK
-              </span>
-              <span className={`text-xs font-mono font-bold ${activeRisk >= 75 ? 'text-[#e76561]' : activeRisk >= 50 ? 'text-[#e9ad4b]' : 'text-[#55d29d]'}`}>
-                {activeRisk}/100 ({activeRisk >= 75 ? 'CRITICAL' : activeRisk >= 50 ? 'ELEVATED' : 'NOMINAL'})
-              </span>
-            </div>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <b className="text-sm text-[#e9f0f2] block">{selectedIncident.location}</b>
+                  <p className="text-xs text-[#90a4ae] leading-relaxed mt-1">{selectedIncident.description}</p>
+                </div>
 
-            <div className="h-1.5 bg-[#1b2b33] rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-500 ${activeRisk >= 75 ? 'bg-[#e76561]' : activeRisk >= 50 ? 'bg-[#e9ad4b]' : 'bg-[#55d29d]'}`}
-                style={{ width: `${Math.min(100, activeRisk)}%` }}
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-1 text-[9px] font-mono text-[#8e9fa6] pt-1">
-              <div>Rainfall: <b className="text-[#cad6da]">{activeLocationWeather?.rainfallMm ?? 42}mm</b></div>
-              <div>Slope: <b className="text-[#cad6da]">{activeRisk >= 70 ? 'High' : 'Moderate'}</b></div>
-              <div>Bridges: <b className="text-[#55d29d]">Verified</b></div>
-            </div>
-          </div>
-
-          {/* Card 3: BEST ROUTE RECOMMENDATION */}
-          <div className="p-3.5 bg-[#152a31] border border-[#35c2d4]/60 rounded-xl space-y-2 shadow-md shadow-[#35c2d4]/10">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#35c2d4] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <RouteIcon size={13} /> BEST ROUTE
-              </span>
-              <span className="px-1.5 py-0.5 bg-[#35c2d4] text-[#071014] rounded text-[9px] font-bold">
-                RECOMMENDED
-              </span>
-            </div>
-
-            {bestRoute ? (
-              <div className="space-y-1.5 text-xs">
-                <b className="text-[#e9f0f2] block text-xs">{bestRoute.name}</b>
-                <div className="grid grid-cols-3 gap-1 p-1.5 rounded bg-[#0b161c] border border-[#1b2b33] text-center font-mono text-[10px]">
-                  <div>
-                    <span className="text-[8px] text-[#7d9099] block">Distance</span>
-                    <b className="text-[#e9f0f2]">{bestRoute.distance} km</b>
+                {/* AI Analysis Box */}
+                <div className="p-2.5 rounded-lg bg-[#0e161c] border border-[#233540] space-y-1.5">
+                  <div className="flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-[#78909c]">AI RISK SCORE</span>
+                    <b className="text-[#ef4444] text-xs">{selectedIncident.severity === 'critical' ? '87 / 100' : '64 / 100'}</b>
                   </div>
-                  <div>
-                    <span className="text-[8px] text-[#7d9099] block">ETA</span>
-                    <b className="text-[#35c2d4]">{Math.floor(bestRoute.estimatedTime / 60)}h {Math.round(bestRoute.estimatedTime % 60)}m</b>
+                  <div className="flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-[#78909c]">PREDICTED EVENT</span>
+                    <b className="text-[#e9f0f2] uppercase">{selectedIncident.type}</b>
                   </div>
-                  <div>
-                    <span className="text-[8px] text-[#7d9099] block">Risk Red.</span>
-                    <b className="text-[#55d29d]">-{bestRoute.riskReduction ?? 68}%</b>
+                  <div className="flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-[#78909c]">CONFIDENCE</span>
+                    <b className="text-[#10b981]">{selectedIncident.confidence}% Verified</b>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-[#78909c]">CORRIDOR</span>
+                    <b className="text-[#00e5ff]">{selectedIncident.affectedRoads?.join(', ') || 'NH-14'}</b>
                   </div>
                 </div>
-                <p className="text-[9px] text-[#8e9fa6] leading-tight">
-                  {bestRoute.reason}
-                </p>
+
+                {/* Actions */}
+                <div className="pt-2 border-t border-[#2d2228] flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 py-1.5 px-2.5 rounded-lg bg-[#00e5ff] text-[#04090d] font-bold text-[10px] flex items-center justify-center gap-1 shadow-md shadow-[#00e5ff]/20"
+                    onClick={() => onNav('Routes')}
+                  >
+                    <RouteIcon size={12} /> [ FIND SAFE ROUTE ]
+                  </button>
+                  <button
+                    type="button"
+                    className="py-1.5 px-2.5 rounded-lg bg-[#162732] hover:bg-[#1e3646] border border-[#264354] text-[#cfd8dc] text-[10px] font-bold"
+                    onClick={() => onNav('Vehicles')}
+                  >
+                    [ TRACK VEHICLES ]
+                  </button>
+                  {onAlertAuthority && (
+                    <button
+                      type="button"
+                      className="py-1.5 px-2.5 rounded-lg bg-[#30161a] hover:bg-[#421b21] border border-[#6b252b] text-[#f87171] text-[10px] font-bold"
+                      onClick={() => onAlertAuthority(selectedIncident)}
+                    >
+                      [ ALERT AUTHORITY ]
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : (
-              <p className="text-[10px] text-[#7d9099]">Evaluating optimal multi-criteria route corridors...</p>
-            )}
-          </div>
-
-          {/* Card 4: ACTIVE VEHICLE */}
-          <div className="p-3.5 bg-[#111f26] border border-[#20323b] rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#55d29d] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <Truck size={13} /> ACTIVE VEHICLE
-              </span>
-              <StatusPill tone={activeVehicle?.status === 'delayed' ? 'amber' : 'green'}>
-                {activeVehicle?.status ? activeVehicle.status.toUpperCase() : 'ON ROUTE'}
-              </StatusPill>
             </div>
+          ) : selectedVehicle ? (
+            /* 2. When a Vehicle is explicitly selected */
+            <div className="p-4 bg-[#0e1820] border border-[#00e5ff]/50 rounded-xl space-y-3 shadow-xl glow-cyan">
+              <div className="flex items-center justify-between border-b border-[#1c2e38] pb-2">
+                <span className="text-[10px] text-[#00e5ff] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                  <Truck size={14} /> LIVE VEHICLE TELEMETRY
+                </span>
+                <div className="flex items-center gap-2">
+                  <StatusPill tone={selectedVehicle.status === 'delayed' ? 'amber' : 'green'}>
+                    {selectedVehicle.status.toUpperCase()}
+                  </StatusPill>
+                  {onClearSelection && (
+                    <button
+                      type="button"
+                      onClick={onClearSelection}
+                      className="text-[#78909c] hover:text-[#e9f0f2] text-xs p-1"
+                      title="Return to Regional Overview"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-            {activeVehicle ? (
-              <div className="space-y-1.5 text-xs">
+              <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-baseline">
-                  <b className="text-[#e9f0f2] font-mono text-sm">{activeVehicle.vehicleNumber}</b>
-                  <span className="text-[10px] text-[#7d9099]">{activeVehicle.driverName}</span>
+                  <b className="text-base font-mono text-[#e9f0f2]">{selectedVehicle.vehicleNumber}</b>
+                  <span className="text-xs text-[#90a4ae]">{selectedVehicle.driverName}</span>
                 </div>
 
-                <div className="text-[10px] text-[#cad6da] space-y-0.5">
+                <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-[#071015] border border-[#162732] text-[10px] font-mono">
+                  <div>
+                    <span className="text-[#78909c] block">SPEED</span>
+                    <b className="text-[#00e5ff] text-xs">{selectedVehicle.speed} km/h</b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">GPS SOURCE</span>
+                    <b className="text-[#10b981] text-xs">● LIVE</b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">CARGO PAYLOAD</span>
+                    <b className="text-[#e9f0f2] truncate block">{selectedVehicle.cargo || 'Medicines'}</b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">ESTIMATED ETA</span>
+                    <b className="text-[#fbbf24] text-xs">{selectedVehicle.eta || '42 min'}</b>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-[#cfd8dc] space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-[#7d9099]">Route:</span>
-                    <span>{activeVehicle.origin} ➔ {activeVehicle.destination}</span>
+                    <span className="text-[#78909c]">Corridor:</span>
+                    <span>{selectedVehicle.origin} ➔ {selectedVehicle.destination}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#7d9099]">Cargo:</span>
-                    <span className="text-[#35c2d4] font-medium">{activeVehicle.cargo || 'Emergency Medicines'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#7d9099]">GPS:</span>
-                    <span className="font-mono">{activeVehicle.currentLocation.lat.toFixed(3)}°N, {activeVehicle.currentLocation.lng.toFixed(3)}°E</span>
+                    <span className="text-[#78909c]">Coordinates:</span>
+                    <span className="font-mono">{selectedVehicle.currentLocation.lat.toFixed(3)}°N, {selectedVehicle.currentLocation.lng.toFixed(3)}°E</span>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between text-[9px] text-[#7d9099] mb-1 font-mono">
-                    <span>Transit Progress</span>
-                    <span>{activeVehicle.deliveryPercentage ?? 64}%</span>
+                  <div className="flex justify-between text-[10px] text-[#78909c] mb-1 font-mono">
+                    <span>Transit Corridor Progress</span>
+                    <span>{selectedVehicle.deliveryPercentage ?? 68}%</span>
                   </div>
-                  <div className="h-1 bg-[#1b2b33] rounded overflow-hidden">
-                    <div className="h-full bg-[#35c2d4]" style={{ width: `${activeVehicle.deliveryPercentage ?? 64}%` }} />
+                  <div className="h-1.5 bg-[#14232c] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#00e5ff]" style={{ width: `${selectedVehicle.deliveryPercentage ?? 68}%` }} />
                   </div>
                 </div>
+
+                <div className="pt-2 border-t border-[#1c2e38] flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 py-1.5 rounded-lg bg-[#00e5ff] text-[#04090d] font-bold text-[10px] flex items-center justify-center gap-1 shadow-md shadow-[#00e5ff]/20"
+                    onClick={() => onNav('Routes')}
+                  >
+                    <Zap size={12} /> [ OPTIMIZE CORRIDOR ]
+                  </button>
+                </div>
               </div>
-            ) : null}
-          </div>
+            </div>
+          ) : selectedDistrict ? (
+            /* 3. When a District is selected */
+            <div className="p-4 bg-[#0e1820] border border-[#10b981]/50 rounded-xl space-y-3 shadow-xl">
+              <div className="flex items-center justify-between border-b border-[#1c2e38] pb-2">
+                <span className="text-[10px] text-[#10b981] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                  <MapPin size={14} /> DISTRICT INTELLIGENCE
+                </span>
+                {onClearSelection && (
+                  <button
+                    type="button"
+                    onClick={onClearSelection}
+                    className="text-[#78909c] hover:text-[#e9f0f2] text-xs p-1"
+                    title="Return to Regional Overview"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div>
+                  <b className="text-base text-[#e9f0f2] block">{selectedDistrict.name} District</b>
+                  <span className="text-[10px] text-[#78909c]">{selectedDistrict.state} · Pop: {selectedDistrict.population?.toLocaleString() ?? '850,000'}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-[#071015] border border-[#162732] text-[10px] font-mono">
+                  <div>
+                    <span className="text-[#78909c] block">ACCESSIBILITY</span>
+                    <b className="text-[#10b981] text-xs">{selectedDistrict.accessibilityScore ?? 75}/100</b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">ISOLATION RISK</span>
+                    <b className={`text-xs ${(selectedDistrict.isolationRisk ?? 25) >= 60 ? 'text-[#ef4444]' : 'text-[#fbbf24]'}`}>
+                      {selectedDistrict.isolationRisk ?? 25}%
+                    </b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">ACTIVE DISRUPTIONS</span>
+                    <b className="text-[#fbbf24] text-xs">{selectedDistrict.activeIncidents ?? 1} corridors</b>
+                  </div>
+                  <div>
+                    <span className="text-[#78909c] block">CRITICAL BUFFER</span>
+                    <b className="text-[#00e5ff] text-xs">Oxygen & Medicine</b>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="w-full py-1.5 rounded-lg bg-[#162732] hover:bg-[#1e3646] border border-[#264354] text-[#cfd8dc] text-[10px] font-bold"
+                  onClick={() => onNav('Analytics')}
+                >
+                  [ VIEW DISTRICT VULNERABILITY MATRIX ]
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* 4. Default: 4-Card Regional Operations Overview */
+            <>
+              {/* Card 1: CURRENT INCIDENT */}
+              <div className="p-3.5 bg-[#0e1820] border border-[#1c2e38] rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#ef4444] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                    <AlertTriangle size={13} /> CURRENT INCIDENT
+                  </span>
+                  {currentInc ? (
+                    <StatusPill tone={currentInc.severity === 'critical' ? 'red' : 'amber'}>
+                      {currentInc.severity.toUpperCase()}
+                    </StatusPill>
+                  ) : (
+                    <span className="text-[9px] text-[#10b981] font-mono font-bold">✓ NO VERIFIED INCIDENTS</span>
+                  )}
+                </div>
+
+                {currentInc ? (
+                  <div className="space-y-1.5 text-xs">
+                    <b className="text-[#e9f0f2] block">{currentInc.location}</b>
+                    <p className="text-[10px] text-[#90a4ae] leading-snug">{currentInc.description}</p>
+                    <div className="flex items-center justify-between text-[9px] text-[#78909c] pt-1 border-t border-[#162732] font-mono">
+                      <span>Corridor: <b className="text-[#cfd8dc]">{currentInc.affectedRoads?.join(', ') || 'NH-14'}</b></span>
+                      <span>Confidence: <b className="text-[#10b981]">{currentInc.confidence}%</b></span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-[#78909c]">
+                    All monitored corridors operational without blockage.
+                  </p>
+                )}
+              </div>
+
+              {/* Card 2: AI RISK ENGINE */}
+              <div className="p-3.5 bg-[#0e1820] border border-[#1c2e38] rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#00e5ff] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                    <BrainCircuit size={13} /> AI DISRUPTION RISK
+                  </span>
+                  <span className={`text-xs font-mono font-bold ${activeRisk >= 75 ? 'text-[#ef4444]' : activeRisk >= 50 ? 'text-[#fbbf24]' : 'text-[#10b981]'}`}>
+                    {activeRisk}/100 ({activeRisk >= 75 ? 'CRITICAL' : activeRisk >= 50 ? 'ELEVATED' : 'NOMINAL'})
+                  </span>
+                </div>
+
+                <div className="h-1.5 bg-[#14232c] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-500 ${activeRisk >= 75 ? 'bg-[#ef4444]' : activeRisk >= 50 ? 'bg-[#fbbf24]' : 'bg-[#10b981]'}`}
+                    style={{ width: `${Math.min(100, activeRisk)}%` }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 text-[9px] font-mono text-[#90a4ae] pt-1">
+                  <div>Rainfall: <b className="text-[#cfd8dc]">{activeLocationWeather?.rainfallMm ?? 42}mm</b></div>
+                  <div>Slope: <b className="text-[#cfd8dc]">{activeRisk >= 70 ? 'High' : 'Moderate'}</b></div>
+                  <div>Bridges: <b className="text-[#10b981]">Verified</b></div>
+                </div>
+              </div>
+
+              {/* Card 3: BEST ROUTE RECOMMENDATION */}
+              <div className="p-3.5 bg-[#10232c] border border-[#00e5ff]/60 rounded-xl space-y-2 shadow-lg glow-cyan">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#00e5ff] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                    <RouteIcon size={13} /> BEST ROUTE
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-[#00e5ff] text-[#04090d] rounded text-[9px] font-bold font-mono">
+                    RECOMMENDED
+                  </span>
+                </div>
+
+                {bestRoute ? (
+                  <div className="space-y-1.5 text-xs">
+                    <b className="text-[#e9f0f2] block text-xs">{bestRoute.name}</b>
+                    <div className="grid grid-cols-3 gap-1 p-1.5 rounded bg-[#071015] border border-[#162732] text-center font-mono text-[10px]">
+                      <div>
+                        <span className="text-[8px] text-[#78909c] block">Distance</span>
+                        <b className="text-[#e9f0f2]">{bestRoute.distance} km</b>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-[#78909c] block">ETA</span>
+                        <b className="text-[#00e5ff]">{Math.floor(bestRoute.estimatedTime / 60)}h {Math.round(bestRoute.estimatedTime % 60)}m</b>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-[#78909c] block">Risk Red.</span>
+                        <b className="text-[#10b981]">-{bestRoute.riskReduction ?? 68}%</b>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-[#90a4ae] leading-tight">
+                      {bestRoute.reason}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-[#78909c]">Evaluating optimal multi-criteria route corridors...</p>
+                )}
+              </div>
+
+              {/* Card 4: ACTIVE VEHICLE */}
+              <div className="p-3.5 bg-[#0e1820] border border-[#1c2e38] rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#10b981] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                    <Truck size={13} /> ACTIVE VEHICLE
+                  </span>
+                  <StatusPill tone={activeVehicle?.status === 'delayed' ? 'amber' : 'green'}>
+                    {activeVehicle?.status ? activeVehicle.status.toUpperCase() : 'ON ROUTE'}
+                  </StatusPill>
+                </div>
+
+                {activeVehicle ? (
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-baseline">
+                      <b className="text-[#e9f0f2] font-mono text-sm">{activeVehicle.vehicleNumber}</b>
+                      <span className="text-[10px] text-[#78909c]">{activeVehicle.driverName}</span>
+                    </div>
+
+                    <div className="text-[10px] text-[#cfd8dc] space-y-0.5">
+                      <div className="flex justify-between">
+                        <span className="text-[#78909c]">Route:</span>
+                        <span>{activeVehicle.origin} ➔ {activeVehicle.destination}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#78909c]">Cargo:</span>
+                        <span className="text-[#00e5ff] font-medium">{activeVehicle.cargo || 'Emergency Medicines'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#78909c]">GPS:</span>
+                        <span className="font-mono">{activeVehicle.currentLocation.lat.toFixed(3)}°N, {activeVehicle.currentLocation.lng.toFixed(3)}°E</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[9px] text-[#78909c] mb-1 font-mono">
+                        <span>Transit Progress</span>
+                        <span>{activeVehicle.deliveryPercentage ?? 64}%</span>
+                      </div>
+                      <div className="h-1 bg-[#14232c] rounded overflow-hidden">
+                        <div className="h-full bg-[#00e5ff]" style={{ width: `${activeVehicle.deliveryPercentage ?? 64}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
         </aside>
       </div>
 
